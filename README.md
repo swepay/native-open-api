@@ -1,5 +1,9 @@
 ﻿# Native.OpenApi
 
+[![Build Status](https://github.com/swepay/native-open-api/actions/workflows/dotnet.yml/badge.svg)](https://github.com/swepay/native-open-api/actions/workflows/dotnet.yml)
+[![NuGet](https://img.shields.io/nuget/v/NativeOpenApi.svg)](https://www.nuget.org/packages/NativeOpenApi)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 OpenAPI 3.1 document loading, linting, merging, and rendering abstractions for .NET 10 Native AOT applications.
 
 ## Features

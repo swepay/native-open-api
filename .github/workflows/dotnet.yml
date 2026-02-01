@@ -1,0 +1,65 @@
+name: .NET
+
+on:
+    push:
+        branches: [main]
+        tags:
+            - "v*"
+    pull_request:
+        branches: [main]
+
+env:
+    DOTNET_VERSION: "10.0.x"
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Setup .NET
+              uses: actions/setup-dotnet@v4
+              with:
+                  dotnet-version: ${{ env.DOTNET_VERSION }}
+
+            - name: Restore dependencies
+              run: dotnet restore
+
+            - name: Build
+              run: dotnet build --no-restore --configuration Release
+
+            - name: Test
+              run: dotnet test --no-build --configuration Release --verbosity normal --collect:"XPlat Code Coverage"
+
+            - name: Upload coverage reports
+              uses: codecov/codecov-action@v4
+              with:
+                  token: ${{ secrets.CODECOV_TOKEN }}
+                  fail_ci_if_error: false
+
+    publish:
+        needs: build
+        runs-on: ubuntu-latest
+        if: startsWith(github.ref, 'refs/tags/v')
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Setup .NET
+              uses: actions/setup-dotnet@v4
+              with:
+                  dotnet-version: ${{ env.DOTNET_VERSION }}
+
+            - name: Extract version from tag
+              id: get_version
+              run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+            - name: Build
+              run: dotnet build --configuration Release -p:Version=${{ steps.get_version.outputs.VERSION }}
+
+            - name: Pack
+              run: dotnet pack src/Native.OpenApi/Native.OpenApi.csproj --configuration Release --no-build -p:Version=${{ steps.get_version.outputs.VERSION }} -o ./nupkg
+
+            - name: Push to NuGet
+              run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

@@ -12,10 +12,25 @@
     <RootNamespace>Native.OpenApi</RootNamespace>
     <AssemblyName>Native.OpenApi</AssemblyName>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <PackageId>Native.OpenApi</PackageId>
-    <Version>1.0.0</Version>
-    <Authors>SwePay</Authors>
-    <Description>OpenAPI 3.1 document loading, linting, merging and rendering abstractions for Native AOT.</Description>
   </PropertyGroup>
+
+  <!-- Package metadata -->
+  <PropertyGroup>
+    <PackageId>NativeOpenApi</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Swepay</Authors>
+    <Description>OpenAPI 3.1 document loading, linting, merging and rendering abstractions optimized for Native AOT. Provides high-performance document parsing, validation, multi-file merging, and HTML rendering capabilities.</Description>
+    <PackageTags>openapi;swagger;native-aot;linting;validation;merging;rendering;api-documentation</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>native-open-api.png</PackageIcon>
+    <RepositoryUrl>https://github.com/swepay/native-open-api</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\native-open-api.png" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
 </Project>
