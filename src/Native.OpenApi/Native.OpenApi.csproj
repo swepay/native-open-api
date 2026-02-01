@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <IsTrimmable>true</IsTrimmable>
+    <TrimMode>full</TrimMode>
+    <RootNamespace>Native.OpenApi</RootNamespace>
+    <AssemblyName>Native.OpenApi</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageId>Native.OpenApi</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>SwePay</Authors>
+    <Description>OpenAPI 3.1 document loading, linting, merging and rendering abstractions for Native AOT.</Description>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,115 @@
+﻿# Native.OpenApi
+
+OpenAPI 3.1 document loading, linting, merging, and rendering abstractions for .NET 10 Native AOT applications.
+
+## Features
+
+- **OpenAPI Document Loading**: Load OpenAPI specs from embedded resources
+- **Document Merging**: Merge multiple partial specs into a consolidated document
+- **Linting**: Validate OpenAPI specs against configurable rules
+- **HTML Rendering**: Generate Redoc and Scalar documentation pages
+
+## Installation
+
+```bash
+dotnet add package Native.OpenApi
+```
+
+## Usage
+
+### 1. Create your document loader
+
+```csharp
+public class MyOpenApiDocumentLoader : OpenApiDocumentLoaderBase
+{
+    public MyOpenApiDocumentLoader(OpenApiResourceReader resourceReader) 
+        : base(resourceReader) { }
+
+    public override IReadOnlyList<OpenApiDocumentPart> LoadCommon()
+    {
+        return new List<OpenApiDocumentPart>
+        {
+            Load("common-schemas", "openapi/common/schemas.yaml"),
+            Load("common-responses", "openapi/common/responses.yaml"),
+            Load("common-security", "openapi/common/security.yaml")
+        };
+    }
+
+    public override IReadOnlyList<OpenApiDocumentPart> LoadPartials()
+    {
+        return new List<OpenApiDocumentPart>
+        {
+            Load("users", "openapi/users/openapi.yaml"),
+            Load("products", "openapi/products/openapi.yaml")
+        };
+    }
+}
+```
+
+### 2. Create your document merger (optional)
+
+```csharp
+public class MyOpenApiDocumentMerger : OpenApiDocumentMerger
+{
+    protected override string GetServerUrl()
+    {
+        var env = Environment.GetEnvironmentVariable("ENVIRONMENT") ?? "dev";
+        return env switch
+        {
+            "prd" => "https://api.myapp.com",
+            "hml" => "https://api-staging.myapp.com",
+            _ => "https://localhost:5001"
+        };
+    }
+
+    protected override string GetApiTitle() => "My API";
+    protected override string GetApiDescription() => "My consolidated API documentation.";
+}
+```
+
+### 3. Wire up the provider
+
+```csharp
+var resourceReader = new OpenApiResourceReader(typeof(Program).Assembly, "MyApp.");
+var loader = new MyOpenApiDocumentLoader(resourceReader);
+var merger = new MyOpenApiDocumentMerger();
+var linter = new OpenApiLinter(OpenApiLintOptions.Empty);
+var provider = new OpenApiDocumentProvider(loader, merger, linter);
+
+provider.WarmUp();
+
+var json = provider.Document.Json;
+var yaml = provider.Document.Yaml;
+```
+
+### 4. Render documentation pages
+
+```csharp
+var renderer = new OpenApiHtmlRenderer();
+var redocHtml = renderer.RenderRedoc("/openapi/v1/spec.json", "My API Docs");
+var scalarHtml = renderer.RenderScalar("/openapi/v1/spec.json", "My API Docs");
+```
+
+## Linting Rules
+
+Configure linting rules using `OpenApiLintOptions`:
+
+```csharp
+var options = new OpenApiLintOptions(
+    RequiredErrorResponses: ["400", "401", "500"],
+    SensitiveFieldNames: ["password", "token", "secret"],
+    DisallowedGenericSegments: ["data", "items"]
+);
+var linter = new OpenApiLinter(options);
+```
+
+The linter validates:
+- OpenAPI version is 3.1.0
+- All paths include versioning (e.g., `/v1/`)
+- All operations have security definitions (JwtBearer or OAuth2)
+- Required error responses are present
+- Sensitive fields have descriptions
+
+## License
+
+MIT
