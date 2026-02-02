@@ -8,7 +8,8 @@ OpenAPI 3.1 document loading, linting, merging, and rendering abstractions for .
 
 ## Features
 
-- **OpenAPI Document Loading**: Load OpenAPI specs from embedded resources
+- **OpenAPI Document Loading**: Load OpenAPI specs from embedded resources (JSON and YAML supported)
+- **YAML Support**: Full support for YAML format with AOT-compatible parsing
 - **Document Merging**: Merge multiple partial specs into a consolidated document
 - **Linting**: Validate OpenAPI specs against configurable rules
 - **HTML Rendering**: Generate Redoc and Scalar documentation pages
@@ -23,6 +24,8 @@ dotnet add package Native.OpenApi
 
 ### 1. Create your document loader
 
+The loader automatically detects and parses both JSON (`.json`) and YAML (`.yaml`, `.yml`) files:
+
 ```csharp
 public class MyOpenApiDocumentLoader : OpenApiDocumentLoaderBase
 {
@@ -33,6 +36,7 @@ public class MyOpenApiDocumentLoader : OpenApiDocumentLoaderBase
     {
         return new List<OpenApiDocumentPart>
         {
+            // YAML files
             Load("common-schemas", "openapi/common/schemas.yaml"),
             Load("common-responses", "openapi/common/responses.yaml"),
             Load("common-security", "openapi/common/security.yaml")
@@ -43,8 +47,9 @@ public class MyOpenApiDocumentLoader : OpenApiDocumentLoaderBase
     {
         return new List<OpenApiDocumentPart>
         {
+            // Mix of YAML and JSON files
             Load("users", "openapi/users/openapi.yaml"),
-            Load("products", "openapi/products/openapi.yaml")
+            Load("products", "openapi/products/openapi.json")
         };
     }
 }

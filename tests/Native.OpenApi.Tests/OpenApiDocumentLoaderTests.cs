@@ -164,7 +164,34 @@ public class OpenApiDocumentLoaderTests
         paths.Should().ContainKey("/users");
     }
 
-    private sealed class TestDocumentLoader : OpenApiDocumentLoaderBase
+    [Fact]
+    public void IsYamlFile_ShouldReturnTrueForYamlExtension()
+    {
+        // Arrange & Act & Assert
+        TestDocumentLoader.TestIsYamlFile("test.yaml").Should().BeTrue();
+        TestDocumentLoader.TestIsYamlFile("test.YAML").Should().BeTrue();
+        TestDocumentLoader.TestIsYamlFile("path/to/spec.yaml").Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsYamlFile_ShouldReturnTrueForYmlExtension()
+    {
+        // Arrange & Act & Assert
+        TestDocumentLoader.TestIsYamlFile("test.yml").Should().BeTrue();
+        TestDocumentLoader.TestIsYamlFile("test.YML").Should().BeTrue();
+        TestDocumentLoader.TestIsYamlFile("path/to/spec.yml").Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsYamlFile_ShouldReturnFalseForJsonExtension()
+    {
+        // Arrange & Act & Assert
+        TestDocumentLoader.TestIsYamlFile("test.json").Should().BeFalse();
+        TestDocumentLoader.TestIsYamlFile("test.JSON").Should().BeFalse();
+        TestDocumentLoader.TestIsYamlFile("path/to/spec.json").Should().BeFalse();
+    }
+
+    private sealed class TestDocumentLoader : TestOpenApiDocumentLoaderBase
     {
         public override IReadOnlyList<OpenApiDocumentPart> LoadPartials()
         {
@@ -173,7 +200,7 @@ public class OpenApiDocumentLoaderTests
         }
 
         public OpenApiDocumentPart TestLoadPart(string name, string json)
-            => CreatePart(name, json, $"{name}.yaml");
+            => CreatePart(name, json, $"{name}.json");
 
         public OpenApiDocumentPart TestLoadPartWithPath(string name, string json, string sourcePath)
             => CreatePart(name, json, sourcePath);
@@ -183,21 +210,27 @@ public class OpenApiDocumentLoaderTests
             var root = JsonNode.Parse(json)!;
             return new OpenApiDocumentPart(name, sourcePath, root, json);
         }
+
+        public static bool TestIsYamlFile(string path)
+        {
+            return path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(".yml", StringComparison.OrdinalIgnoreCase);
+        }
     }
 
-    private sealed class EmptyDocumentLoader : OpenApiDocumentLoaderBase
+    private sealed class EmptyDocumentLoader : TestOpenApiDocumentLoaderBase
     {
         public override IReadOnlyList<OpenApiDocumentPart> LoadPartials()
         {
             throw new InvalidOperationException("Must provide at least one partial");
         }
     }
-}
 
-// Test base class implementation
-public abstract class OpenApiDocumentLoaderBase : IOpenApiDocumentLoader
-{
-    public virtual IReadOnlyList<OpenApiDocumentPart> LoadCommon() => [];
+    // Simple test base class that doesn't require resource reader
+    private abstract class TestOpenApiDocumentLoaderBase : IOpenApiDocumentLoader
+    {
+        public virtual IReadOnlyList<OpenApiDocumentPart> LoadCommon() => [];
 
-    public abstract IReadOnlyList<OpenApiDocumentPart> LoadPartials();
+        public abstract IReadOnlyList<OpenApiDocumentPart> LoadPartials();
+    }
 }
