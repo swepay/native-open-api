@@ -12,6 +12,10 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Native.OpenApi.Generator.Tests" />
+  </ItemGroup>
+
   <!-- Package metadata -->
   <PropertyGroup>
     <PackageId>NativeOpenApiGenerator</PackageId>
