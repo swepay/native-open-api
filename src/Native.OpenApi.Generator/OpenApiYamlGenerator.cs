@@ -90,7 +90,7 @@ internal static class OpenApiYamlGenerator
                 sb.AppendLine($"            {contentType}:");
                 sb.AppendLine("              schema:");
                 sb.AppendLine($"                $ref: \"#/components/schemas/{endpoint.ResponseSimpleName}\"");
-                
+
                 // Standard error responses
                 sb.AppendLine("        \"400\":");
                 sb.AppendLine("          $ref: \"#/components/responses/BadRequest\"");

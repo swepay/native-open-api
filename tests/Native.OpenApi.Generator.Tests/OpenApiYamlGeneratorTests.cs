@@ -316,7 +316,7 @@ public sealed class OpenApiYamlGeneratorTests
         // Path should appear only once
         var pathCount = yaml.Split("/v1/items:").Length - 1;
         pathCount.Should().Be(1);
-        
+
         yaml.Should().Contain("get:");
         yaml.Should().Contain("post:");
     }

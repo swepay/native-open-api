@@ -227,11 +227,11 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         sb.AppendLine("    /// The generated OpenAPI YAML specification.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine("    public const string Yaml = @\"");
-        
+
         // Escape the YAML for C# string literal
         var escapedYaml = yaml.Replace("\"", "\"\"");
         sb.Append(escapedYaml);
-        
+
         sb.AppendLine("\";");
         sb.AppendLine();
         sb.AppendLine("    /// <summary>");
@@ -244,12 +244,12 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         sb.AppendLine("    /// </summary>");
         sb.AppendLine("    public static readonly (string Method, string Path)[] Endpoints = new[]");
         sb.AppendLine("    {");
-        
+
         foreach (var endpoint in endpoints.OrderBy(e => e.Path).ThenBy(e => e.Method))
         {
             sb.AppendLine($"        (\"{endpoint.Method}\", \"{endpoint.Path}\"),");
         }
-        
+
         sb.AppendLine("    };");
         sb.AppendLine("}");
 
