@@ -1,5 +1,9 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Native.OpenApi/Native.OpenApi.csproj" />
+    <Project Path="src/Native.OpenApi.Generator/Native.OpenApi.Generator.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Native.OpenApi.Tests/Native.OpenApi.Tests.csproj" />
   </Folder>
 </Solution>

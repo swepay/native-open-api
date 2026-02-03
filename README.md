@@ -119,6 +119,92 @@ The linter validates:
 - Required error responses are present
 - Sensitive fields have descriptions
 
+## Source Generator (NativeOpenApiGenerator)
+
+Automatically generate OpenAPI specifications from NativeLambdaRouter endpoints at compile time!
+
+### Installation
+
+```bash
+dotnet add package NativeOpenApiGenerator
+```
+
+### How it works
+
+The Source Generator analyzes your `ConfigureRoutes` method and extracts endpoint information:
+
+```csharp
+protected override void ConfigureRoutes(IRouteBuilder routes)
+{
+    // These endpoints are automatically discovered at compile time
+    routes.MapGet<GetItemsCommand, GetItemsResponse>("/v1/items", ctx => new GetItemsCommand());
+    routes.MapPost<CreateItemCommand, CreateItemResponse>("/v1/items", ctx => Deserialize<CreateItemCommand>(ctx.Body!));
+    routes.MapGet<GetItemByIdCommand, GetItemByIdResponse>("/v1/items/{id}", ctx => new GetItemByIdCommand(ctx.PathParameters["id"]));
+    routes.MapDelete<DeleteItemCommand, DeleteItemResponse>("/v1/items/{id}", ctx => new DeleteItemCommand(ctx.PathParameters["id"]));
+}
+```
+
+### Generated output
+
+The generator creates a `GeneratedOpenApiSpec` class with the YAML specification:
+
+```csharp
+// Auto-generated code
+namespace Native.OpenApi.Generated;
+
+public static class GeneratedOpenApiSpec
+{
+    public const string Yaml = @"
+openapi: ""3.1.0""
+info:
+  title: ""MyApi""
+  version: ""1.0.0""
+paths:
+  /v1/items:
+    get:
+      operationId: getV1Items
+      summary: ""Get GetItems""
+      ...
+    post:
+      operationId: postV1Items
+      summary: ""Create CreateItem""
+      ...
+";
+
+    public const int EndpointCount = 4;
+    
+    public static readonly (string Method, string Path)[] Endpoints = new[]
+    {
+        ("DELETE", "/v1/items/{id}"),
+        ("GET", "/v1/items"),
+        ("GET", "/v1/items/{id}"),
+        ("POST", "/v1/items"),
+    };
+}
+```
+
+### Using the generated spec
+
+```csharp
+// Access the generated OpenAPI spec
+var yaml = Native.OpenApi.Generated.GeneratedOpenApiSpec.Yaml;
+var endpointCount = Native.OpenApi.Generated.GeneratedOpenApiSpec.EndpointCount;
+
+// Use with Native.OpenApi to merge with common schemas
+var loader = new MyOpenApiDocumentLoader(resourceReader);
+// Include the generated spec as a partial...
+```
+
+### Supported mapping methods
+
+The generator detects all NativeLambdaRouter mapping methods:
+- `MapGet<TCommand, TResponse>`
+- `MapPost<TCommand, TResponse>`
+- `MapPut<TCommand, TResponse>`
+- `MapDelete<TCommand, TResponse>`
+- `MapPatch<TCommand, TResponse>`
+- `Map<TCommand, TResponse>` (custom method)
+
 ## License
 
 MIT
