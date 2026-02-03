@@ -19,16 +19,22 @@
   <!-- Package metadata -->
   <PropertyGroup>
     <PackageId>NativeOpenApiGenerator</PackageId>
-    <Version>1.2.1</Version>
+    <Version>1.2.2</Version>
     <Authors>Swepay</Authors>
     <Description>Source Generator that automatically generates OpenAPI specifications from NativeLambdaRouter endpoint configurations at compile time.</Description>
     <PackageTags>openapi;source-generator;roslyn;native-aot;code-generation;api-documentation</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageIcon>native-open-api.png</PackageIcon>
     <RepositoryUrl>https://github.com/swepay/native-open-api</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <DevelopmentDependency>true</DevelopmentDependency>
     <IncludeBuildOutput>false</IncludeBuildOutput>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\native-open-api.png" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" PrivateAssets="all" />
