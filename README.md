@@ -10,7 +10,7 @@ A collection of .NET libraries for OpenAPI 3.1 document management, optimized fo
 | Package | NuGet | Description |
 |---------|-------|-------------|
 | [NativeOpenApi](src/Native.OpenApi/) | [![NuGet](https://img.shields.io/nuget/v/NativeOpenApi.svg)](https://www.nuget.org/packages/NativeOpenApi) | OpenAPI document loading, linting, merging, and HTML rendering |
-| [NativeOpenApiGenerator](src/Native.OpenApi.Generator/) | [![NuGet](https://img.shields.io/nuget/v/NativeOpenApiGenerator.svg)](https://www.nuget.org/packages/NativeOpenApiGenerator) | Source Generator for automatic OpenAPI spec generation |
+| [NativeOpenApiGenerator](src/NativeLambdaRouter.SourceGenerator.OpenApi/) | [![NuGet](https://img.shields.io/nuget/v/NativeOpenApiGenerator.svg)](https://www.nuget.org/packages/NativeOpenApiGenerator) | Source Generator for automatic OpenAPI spec generation |
 
 ## Overview
 
@@ -67,7 +67,7 @@ routes.MapPost<CreateItemCommand, CreateItemResponse>("/v1/items", ctx => Deseri
 string yaml = Native.OpenApi.Generated.GeneratedOpenApiSpec.Yaml;
 ```
 
-👉 [Full documentation](src/Native.OpenApi.Generator/README.md)
+👉 [Full documentation](src/NativeLambdaRouter.SourceGenerator.OpenApi/README.md)
 
 ---
 
@@ -112,14 +112,14 @@ native-open-api/
 │   │   ├── OpenApiHtmlRenderer.cs
 │   │   └── README.md
 │   │
-│   └── Native.OpenApi.Generator/ # Source Generator
+│   └── NativeLambdaRouter.SourceGenerator.OpenApi/ # Source Generator
 │       ├── OpenApiSourceGenerator.cs
 │       ├── OpenApiYamlGenerator.cs
 │       └── README.md
 │
 └── tests/
     ├── Native.OpenApi.Tests/
-    └── Native.OpenApi.Generator.Tests/
+    └── NativeLambdaRouter.SourceGenerator.OpenApi.Tests/
 ```
 
 ## Requirements

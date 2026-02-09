@@ -1,10 +1,10 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Native.OpenApi/Native.OpenApi.csproj" />
-    <Project Path="src/Native.OpenApi.Generator/Native.OpenApi.Generator.csproj" />
+    <Project Path="src/NativeLambdaRouter.SourceGenerator.OpenApi/NativeLambdaRouter.SourceGenerator.OpenApi.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Native.OpenApi.Tests/Native.OpenApi.Tests.csproj" />
-    <Project Path="tests/Native.OpenApi.Generator.Tests/Native.OpenApi.Generator.Tests.csproj" />
+    <Project Path="tests/NativeLambdaRouter.SourceGenerator.OpenApi.Tests/NativeLambdaRouter.SourceGenerator.OpenApi.Tests.csproj" />
   </Folder>
 </Solution>

@@ -1,4 +1,4 @@
-namespace Native.OpenApi.Generator;
+namespace NativeLambdaRouter.SourceGenerator.OpenApi;
 
 /// <summary>
 /// Represents an endpoint discovered from the source code.

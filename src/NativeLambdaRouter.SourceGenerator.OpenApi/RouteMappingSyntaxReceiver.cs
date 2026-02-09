@@ -3,7 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace Native.OpenApi.Generator;
+namespace NativeLambdaRouter.SourceGenerator.OpenApi;
 
 /// <summary>
 /// Syntax receiver that collects all route mapping invocations.

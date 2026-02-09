@@ -25,7 +25,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Native.OpenApi.Generator\Native.OpenApi.Generator.csproj" 
+    <ProjectReference Include="..\..\src\NativeLambdaRouter.SourceGenerator.OpenApi\NativeLambdaRouter.SourceGenerator.OpenApi.csproj" 
                       OutputItemType="Analyzer" 
                       ReferenceOutputAssembly="true" />
   </ItemGroup>

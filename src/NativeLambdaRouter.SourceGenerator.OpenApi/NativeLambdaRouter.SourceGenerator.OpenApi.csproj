@@ -7,18 +7,18 @@
     <Nullable>enable</Nullable>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <IsRoslynComponent>true</IsRoslynComponent>
-    <RootNamespace>Native.OpenApi.Generator</RootNamespace>
-    <AssemblyName>Native.OpenApi.Generator</AssemblyName>
+    <RootNamespace>NativeLambdaRouter.SourceGenerator.OpenApi</RootNamespace>
+    <AssemblyName>NativeLambdaRouter.SourceGenerator.OpenApi</AssemblyName>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Native.OpenApi.Generator.Tests" />
+    <InternalsVisibleTo Include="NativeLambdaRouter.SourceGenerator.OpenApi.Tests" />
   </ItemGroup>
 
   <!-- Package metadata -->
   <PropertyGroup>
-    <PackageId>NativeOpenApiGenerator</PackageId>
+    <PackageId>NativeLambdaRouter.SourceGenerator.OpenApi</PackageId>
     <Version>1.2.2</Version>
     <Authors>Swepay</Authors>
     <Description>Source Generator that automatically generates OpenAPI specifications from NativeLambdaRouter endpoint configurations at compile time.</Description>

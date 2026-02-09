@@ -2,7 +2,7 @@ using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
-namespace Native.OpenApi.Generator.Tests;
+namespace NativeLambdaRouter.SourceGenerator.OpenApi.Tests;
 
 /// <summary>
 /// Helper class for running source generator tests.

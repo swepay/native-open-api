@@ -1,4 +1,4 @@
-namespace Native.OpenApi.Generator.Tests;
+namespace NativeLambdaRouter.SourceGenerator.OpenApi.Tests;
 
 public sealed class OpenApiYamlGeneratorTests
 {

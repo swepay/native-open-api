@@ -1,7 +1,7 @@
 using System.Text;
 using Microsoft.CodeAnalysis;
 
-namespace Native.OpenApi.Generator;
+namespace NativeLambdaRouter.SourceGenerator.OpenApi;
 
 /// <summary>
 /// Generates OpenAPI YAML content from discovered endpoints.

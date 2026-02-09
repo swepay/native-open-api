@@ -5,7 +5,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
-namespace Native.OpenApi.Generator;
+namespace NativeLambdaRouter.SourceGenerator.OpenApi;
 
 /// <summary>
 /// Source Generator that discovers NativeLambdaRouter endpoints and generates OpenAPI specifications.

@@ -154,7 +154,7 @@ All JSON/YAML parsing uses source-generated serialization contexts for optimal p
 
 ## Related Packages
 
-- [NativeOpenApiGenerator](../Native.OpenApi.Generator/) - Source Generator for automatic OpenAPI spec generation from NativeLambdaRouter endpoints
+- [NativeOpenApiGenerator](../NativeLambdaRouter.SourceGenerator.OpenApi/) - Source Generator for automatic OpenAPI spec generation from NativeLambdaRouter endpoints
 
 ## License
 
