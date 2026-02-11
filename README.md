@@ -4,8 +4,8 @@ Bibliotecas .NET 10 para gerenciamento de documentos OpenAPI 3.1, otimizadas par
 
 Este repositório contém dois pacotes NuGet:
 
-  NativeOpenApi .............. Loading, linting, merging e rendering de documentos OpenAPI
-  NativeOpenApiGenerator ..... Source Generator que gera specs OpenAPI em compile-time a partir de endpoints NativeLambdaRouter
+  NativeOpenApi ........................................ Loading, linting, merging e rendering de documentos OpenAPI
+  NativeLambdaRouter.SourceGenerator.OpenApi ........... Source Generator que gera specs OpenAPI em compile-time a partir de endpoints NativeLambdaRouter
 
 
 NativeOpenApi
@@ -25,8 +25,8 @@ Biblioteca core para carregar, validar, mesclar e renderizar documentos OpenAPI 
   Documentação completa: src/Native.OpenApi/README.md
 
 
-NativeOpenApiGenerator
-──────────────────────
+NativeLambdaRouter.SourceGenerator.OpenApi
+──────────────────────────────────────────
 
 Roslyn Source Generator que descobre endpoints MapGet, MapPost, MapPut, MapDelete, MapPatch
 do NativeLambdaRouter e gera a spec OpenAPI 3.1 em compile-time.
@@ -37,7 +37,7 @@ do NativeLambdaRouter e gera a spec OpenAPI 3.1 em compile-time.
   - Implementa IGeneratedOpenApiSpec quando NativeOpenApi está referenciado
   - Namespace customizável via OpenApiSpecName (resolve AssemblyName=bootstrap em AWS Lambda)
 
-  Instalação: dotnet add package NativeOpenApiGenerator
+  Instalação: dotnet add package NativeLambdaRouter.SourceGenerator.OpenApi
 
   Documentação completa: src/NativeLambdaRouter.SourceGenerator.OpenApi/README.md
 
@@ -46,8 +46,8 @@ Quando usar cada pacote
 ───────────────────────
 
   Carregar/mesclar specs escritas manualmente ............... NativeOpenApi
-  Gerar specs automaticamente a partir de endpoints ......... NativeOpenApiGenerator
-  Gerar + mesclar com schemas comuns + servir documentação .. NativeOpenApi + NativeOpenApiGenerator
+  Gerar specs automaticamente a partir de endpoints ......... NativeLambdaRouter.SourceGenerator.OpenApi
+  Gerar + mesclar com schemas comuns + servir documentação .. NativeOpenApi + NativeLambdaRouter.SourceGenerator.OpenApi
 
 
 Estrutura do Repositório
