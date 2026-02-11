@@ -1,6 +1,6 @@
-# NativeOpenApiGenerator
+# NativeLambdaRouter.SourceGenerator.OpenApi
 
-[![NuGet](https://img.shields.io/nuget/v/NativeOpenApiGenerator.svg)](https://www.nuget.org/packages/NativeOpenApiGenerator)
+[![NuGet](https://img.shields.io/nuget/v/NativeLambdaRouter.SourceGenerator.OpenApi.svg)](https://www.nuget.org/packages/NativeLambdaRouter.SourceGenerator.OpenApi)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A Roslyn Source Generator that automatically generates OpenAPI 3.1 specifications from NativeLambdaRouter endpoint configurations at compile time.
@@ -16,7 +16,7 @@ A Roslyn Source Generator that automatically generates OpenAPI 3.1 specification
 ## Installation
 
 ```bash
-dotnet add package NativeOpenApiGenerator
+dotnet add package NativeLambdaRouter.SourceGenerator.OpenApi
 ```
 
 ## Quick Start
@@ -199,7 +199,7 @@ Each Function project only needs:
 
 ```xml
 <!-- Functions.Admin.csproj, Functions.Identity.csproj, Functions.OpenId.csproj -->
-<PackageReference Include="NativeOpenApiGenerator" Version="1.3.1" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+<PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi" Version="1.3.1" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 <PackageReference Include="NativeOpenApi" Version="1.3.0" />
 ```
 
