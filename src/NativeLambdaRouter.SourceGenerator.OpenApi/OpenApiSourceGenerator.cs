@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
 
 namespace NativeLambdaRouter.SourceGenerator.OpenApi;
@@ -58,11 +59,14 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         // Combine with compilation to get assembly name
         var compilationAndEndpoints = context.CompilationProvider.Combine(collectedEndpoints);
 
+        // Combine with analyzer config options to read MSBuild properties (OpenApiSpecName, OpenApiSpecTitle)
+        var compilationEndpointsAndOptions = compilationAndEndpoints.Combine(context.AnalyzerConfigOptionsProvider);
+
         // Generate OpenAPI spec
-        context.RegisterSourceOutput(compilationAndEndpoints, static (spc, source) =>
+        context.RegisterSourceOutput(compilationEndpointsAndOptions, static (spc, source) =>
         {
-            var (compilation, endpoints) = source;
-            Execute(spc, compilation, endpoints);
+            var ((compilation, endpoints), optionsProvider) = source;
+            Execute(spc, compilation, endpoints, optionsProvider);
         });
     }
 
@@ -266,7 +270,8 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
     private static void Execute(
         SourceProductionContext context,
         Compilation compilation,
-        ImmutableArray<EndpointInfo> endpoints)
+        ImmutableArray<EndpointInfo> endpoints,
+        AnalyzerConfigOptionsProvider optionsProvider)
     {
         if (endpoints.IsDefaultOrEmpty)
         {
@@ -285,9 +290,19 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
                 endpoint.Path));
         }
 
-        var assemblyName = compilation.AssemblyName ?? "API";
-        var apiTitle = assemblyName.Replace(".", " ");
-        var generatedNamespace = assemblyName + ".Generated";
+        // Read MSBuild properties: OpenApiSpecName overrides the namespace base, OpenApiSpecTitle overrides the API title
+        optionsProvider.GlobalOptions.TryGetValue("build_property.OpenApiSpecName", out var specName);
+        optionsProvider.GlobalOptions.TryGetValue("build_property.OpenApiSpecTitle", out var specTitle);
+
+        var baseName = !string.IsNullOrWhiteSpace(specName)
+            ? specName!.Trim()
+            : (compilation.AssemblyName ?? "API");
+
+        var apiTitle = !string.IsNullOrWhiteSpace(specTitle)
+            ? specTitle!.Trim()
+            : baseName.Replace(".", " ");
+
+        var generatedNamespace = baseName + ".Generated";
 
         // Generate OpenAPI YAML
         var yaml = OpenApiYamlGenerator.Generate(endpoints.ToList(), apiTitle, "1.0.0");

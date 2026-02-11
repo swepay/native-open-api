@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.1] - 2026-02-11
+
+### Added
+- **Source Generator**: New MSBuild properties `OpenApiSpecName` and `OpenApiSpecTitle` for customizing
+  the generated namespace and API title.
+  - `OpenApiSpecName` overrides the assembly name used as namespace base (`{value}.Generated`).
+  - `OpenApiSpecTitle` overrides the API title in the generated YAML `info.title`.
+  - Both properties are optional; the generator falls back to `AssemblyName` when not set.
+- **Source Generator**: Bundled `.props` file auto-imported via NuGet that exposes
+  `OpenApiSpecName` and `OpenApiSpecTitle` as `CompilerVisibleProperty` to the Roslyn analyzer.
+- **Tests**: 6 new tests covering `OpenApiSpecName`/`OpenApiSpecTitle` customization,
+  fallback behavior, and multi-bootstrap-project scenarios (123 total).
+
+### Fixed
+- **Source Generator**: AWS Lambda custom runtime projects using `AssemblyName=bootstrap`
+  can now produce unique namespaces per function project via `OpenApiSpecName`.
+
 ## [1.3.0] - 2026-02-11
 
 ### ⚠️ Breaking Changes

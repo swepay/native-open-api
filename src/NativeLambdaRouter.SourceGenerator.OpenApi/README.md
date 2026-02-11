@@ -199,7 +199,7 @@ Each Function project only needs:
 
 ```xml
 <!-- Functions.Admin.csproj, Functions.Identity.csproj, Functions.OpenId.csproj -->
-<PackageReference Include="NativeOpenApiGenerator" Version="1.3.0" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+<PackageReference Include="NativeOpenApiGenerator" Version="1.3.1" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 <PackageReference Include="NativeOpenApi" Version="1.3.0" />
 ```
 
@@ -212,6 +212,64 @@ And the consolidator project:
 <ProjectReference Include="..\Functions.Identity\Functions.Identity.csproj" />
 <ProjectReference Include="..\Functions.OpenId\Functions.OpenId.csproj" />
 ```
+
+### Custom Namespace with `OpenApiSpecName` (v1.3.1+)
+
+By default the generator uses the **assembly name** as the namespace base. This works fine in most cases, but **AWS Lambda custom runtime projects** typically set `AssemblyName=bootstrap` for all functions — causing namespace collisions.
+
+Use the `OpenApiSpecName` MSBuild property to override the namespace base:
+
+```xml
+<!-- Functions.Admin.csproj -->
+<PropertyGroup>
+  <AssemblyName>bootstrap</AssemblyName>
+  <OpenApiSpecName>NativeGuardBackend.Functions.Admin</OpenApiSpecName>
+  <OpenApiSpecTitle>Admin API</OpenApiSpecTitle> <!-- optional: overrides the API title in the YAML -->
+</PropertyGroup>
+```
+
+This generates:
+
+```csharp
+namespace NativeGuardBackend.Functions.Admin.Generated;
+
+public sealed class GeneratedOpenApiSpec : Native.OpenApi.IGeneratedOpenApiSpec
+{
+    // YAML title: "Admin API"
+    public const string YamlContent = @"...";
+}
+```
+
+**Priority:**
+
+| Property | Fallback | Used For |
+|----------|----------|----------|
+| `OpenApiSpecName` | `AssemblyName` | Namespace base (`{value}.Generated`) |
+| `OpenApiSpecTitle` | `OpenApiSpecName` (dots → spaces) | YAML `info.title` field |
+
+**Example for multi-Lambda setup:**
+
+```xml
+<!-- Functions.Admin.csproj -->
+<PropertyGroup>
+  <AssemblyName>bootstrap</AssemblyName>
+  <OpenApiSpecName>NativeGuardBackend.Functions.Admin</OpenApiSpecName>
+</PropertyGroup>
+
+<!-- Functions.Identity.csproj -->
+<PropertyGroup>
+  <AssemblyName>bootstrap</AssemblyName>
+  <OpenApiSpecName>NativeGuardBackend.Functions.Identity</OpenApiSpecName>
+</PropertyGroup>
+
+<!-- Functions.OpenId.csproj -->
+<PropertyGroup>
+  <AssemblyName>bootstrap</AssemblyName>
+  <OpenApiSpecName>NativeGuardBackend.Functions.OpenId</OpenApiSpecName>
+</PropertyGroup>
+```
+
+Each produces a unique namespace even though all assemblies are named `bootstrap`.
 
 ## Requirements
 

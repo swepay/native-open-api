@@ -1,0 +1,7 @@
+<Project>
+  <ItemGroup>
+    <!-- Expose OpenApiSpecName and OpenApiSpecTitle as global analyzer config options -->
+    <CompilerVisibleProperty Include="OpenApiSpecName" />
+    <CompilerVisibleProperty Include="OpenApiSpecTitle" />
+  </ItemGroup>
+</Project>

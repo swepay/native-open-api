@@ -346,4 +346,210 @@ public class MyRouter
         result.Diagnostics.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
             .Should().BeEmpty();
     }
+
+    [Fact]
+    public void Generator_WithOpenApiSpecName_UsesCustomNamespace()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemsCommand { }
+public class GetItemsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemsCommand, GetItemsResponse>(""/v1/items"", ctx => new GetItemsCommand());
+    }
+}
+";
+        var globalOptions = new Dictionary<string, string>
+        {
+            ["build_property.OpenApiSpecName"] = "NativeGuardBackend.Functions.Admin"
+        };
+
+        // Act — AssemblyName is "bootstrap" but OpenApiSpecName overrides it
+        var result = GeneratorTestHelper.RunGenerator(sourceCode, "bootstrap", globalOptions);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("namespace NativeGuardBackend.Functions.Admin.Generated;");
+        generatedSource.Should().NotContain("namespace bootstrap.Generated;");
+    }
+
+    [Fact]
+    public void Generator_WithOpenApiSpecTitle_UsesCustomTitle()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemsCommand { }
+public class GetItemsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemsCommand, GetItemsResponse>(""/v1/items"", ctx => new GetItemsCommand());
+    }
+}
+";
+        var globalOptions = new Dictionary<string, string>
+        {
+            ["build_property.OpenApiSpecName"] = "NativeGuardBackend.Functions.Admin",
+            ["build_property.OpenApiSpecTitle"] = "Admin API"
+        };
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode, "bootstrap", globalOptions);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — the YAML title should use the custom value
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("title: \"\"Admin API\"\"");
+        generatedSource.Should().NotContain("title: \"\"bootstrap\"\"");
+    }
+
+    [Fact]
+    public void Generator_WithoutOpenApiSpecName_FallsBackToAssemblyName()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemsCommand { }
+public class GetItemsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemsCommand, GetItemsResponse>(""/v1/items"", ctx => new GetItemsCommand());
+    }
+}
+";
+
+        // Act — No global options, should use assembly name
+        var result = GeneratorTestHelper.RunGenerator(sourceCode, "MyService.Api");
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("namespace MyService.Api.Generated;");
+    }
+
+    [Fact]
+    public void Generator_WithEmptyOpenApiSpecName_FallsBackToAssemblyName()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemsCommand { }
+public class GetItemsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemsCommand, GetItemsResponse>(""/v1/items"", ctx => new GetItemsCommand());
+    }
+}
+";
+        var globalOptions = new Dictionary<string, string>
+        {
+            ["build_property.OpenApiSpecName"] = ""
+        };
+
+        // Act — Empty spec name should fallback
+        var result = GeneratorTestHelper.RunGenerator(sourceCode, "FallbackAssembly", globalOptions);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("namespace FallbackAssembly.Generated;");
+    }
+
+    [Fact]
+    public void Generator_WithOpenApiSpecNameOnly_TitleDerivedFromSpecName()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemsCommand { }
+public class GetItemsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemsCommand, GetItemsResponse>(""/v1/items"", ctx => new GetItemsCommand());
+    }
+}
+";
+        var globalOptions = new Dictionary<string, string>
+        {
+            ["build_property.OpenApiSpecName"] = "NativeGuard.Functions.Identity"
+        };
+
+        // Act — Only OpenApiSpecName set, title should be derived by replacing dots with spaces
+        var result = GeneratorTestHelper.RunGenerator(sourceCode, "bootstrap", globalOptions);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("title: \"\"NativeGuard Functions Identity\"\"");
+    }
+
+    [Fact]
+    public void Generator_MultipleBootstrapProjects_WithDifferentSpecNames_ProduceDifferentNamespaces()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemsCommand { }
+public class GetItemsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemsCommand, GetItemsResponse>(""/v1/items"", ctx => new GetItemsCommand());
+    }
+}
+";
+
+        // Act — Both assemblies are named "bootstrap" but have different OpenApiSpecName
+        var adminResult = GeneratorTestHelper.RunGenerator(
+            sourceCode, "bootstrap",
+            new Dictionary<string, string> { ["build_property.OpenApiSpecName"] = "Functions.Admin" });
+        var identityResult = GeneratorTestHelper.RunGenerator(
+            sourceCode, "bootstrap",
+            new Dictionary<string, string> { ["build_property.OpenApiSpecName"] = "Functions.Identity" });
+
+        var adminSource = GeneratorTestHelper.GetGeneratedSource(adminResult, "GeneratedOpenApiSpec.g.cs");
+        var identitySource = GeneratorTestHelper.GetGeneratedSource(identityResult, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — Even though both are "bootstrap", they produce different namespaces
+        adminSource.Should().Contain("namespace Functions.Admin.Generated;");
+        identitySource.Should().Contain("namespace Functions.Identity.Generated;");
+    }
 }
