@@ -17,7 +17,7 @@
   <!-- Package metadata -->
   <PropertyGroup>
     <PackageId>NativeOpenApi</PackageId>
-    <Version>1.2.3</Version>
+    <Version>1.2.4</Version>
     <Authors>Swepay</Authors>
     <Description>OpenAPI 3.1 document loading, linting, merging and rendering abstractions optimized for Native AOT. Provides high-performance document parsing, validation, multi-file merging, and HTML rendering capabilities.</Description>
     <PackageTags>openapi;swagger;native-aot;linting;validation;merging;rendering;api-documentation</PackageTags>
@@ -26,6 +26,7 @@
     <PackageIcon>native-open-api.png</PackageIcon>
     <RepositoryUrl>https://github.com/swepay/native-open-api</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
