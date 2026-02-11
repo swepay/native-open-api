@@ -99,8 +99,19 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         var semanticModel = context.SemanticModel;
 
         var symbolInfo = semanticModel.GetSymbolInfo(invocation);
-        if (symbolInfo.Symbol is not IMethodSymbol methodSymbol)
-            return null;
+
+        // Try the resolved symbol first, then fall back to candidate symbols
+        IMethodSymbol? methodSymbol = symbolInfo.Symbol as IMethodSymbol;
+        if (methodSymbol == null && symbolInfo.CandidateSymbols.Length > 0)
+        {
+            methodSymbol = symbolInfo.CandidateSymbols.OfType<IMethodSymbol>().FirstOrDefault();
+        }
+
+        if (methodSymbol == null)
+        {
+            // Last resort: try to extract from the syntax tree directly (for generic invocations)
+            return TryExtractFromSyntax(invocation, semanticModel);
+        }
 
         // Check if the method is from IRouteBuilder, RouteBuilder, or extension methods on these types
         var containingType = methodSymbol.ContainingType;
@@ -108,16 +119,16 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
             return null;
 
         var typeName = containingType.ToDisplayString();
-        
+
         // Also check if it's an extension method by looking at the first parameter type
         var isRouteBuilderMethod = IsRouteBuilderType(typeName);
-        
+
         if (!isRouteBuilderMethod && methodSymbol.IsExtensionMethod && methodSymbol.Parameters.Length > 0)
         {
             var firstParamType = methodSymbol.Parameters[0].Type.ToDisplayString();
             isRouteBuilderMethod = IsRouteBuilderType(firstParamType);
         }
-        
+
         // Also check the receiver type for instance methods
         if (!isRouteBuilderMethod && invocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
@@ -126,7 +137,7 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
             {
                 var receiverTypeName = receiverTypeInfo.Type.ToDisplayString();
                 isRouteBuilderMethod = IsRouteBuilderType(receiverTypeName);
-                
+
                 // Also check interfaces implemented by the receiver
                 if (!isRouteBuilderMethod)
                 {
@@ -181,7 +192,7 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
 
     private static bool IsRouteBuilderType(string typeName)
     {
-        return typeName.Contains("IRouteBuilder") 
+        return typeName.Contains("IRouteBuilder")
             || typeName.Contains("RouteBuilder")
             || typeName.Contains("NativeLambdaRouter");
     }
@@ -268,9 +279,9 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         foreach (var endpoint in endpoints)
         {
             context.ReportDiagnostic(Diagnostic.Create(
-                DebugEndpointFound, 
-                Location.None, 
-                endpoint.Method, 
+                DebugEndpointFound,
+                Location.None,
+                endpoint.Method,
                 endpoint.Path));
         }
 
@@ -334,5 +345,84 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         sb.AppendLine("}");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Fallback extraction from syntax when the semantic model cannot resolve the method symbol.
+    /// This handles cases where NuGet package types are not fully resolved during generation.
+    /// </summary>
+    private static EndpointInfo? TryExtractFromSyntax(InvocationExpressionSyntax invocation, SemanticModel semanticModel)
+    {
+        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+            return null;
+
+        // Check if the name is a generic name like MapGet<TCommand, TResponse>
+        if (memberAccess.Name is not GenericNameSyntax genericName)
+            return null;
+
+        var methodName = genericName.Identifier.Text;
+        if (methodName is not ("MapGet" or "MapPost" or "MapPut" or "MapDelete" or "MapPatch" or "Map"))
+            return null;
+
+        // Verify the receiver looks like a route builder parameter
+        var receiverTypeInfo = semanticModel.GetTypeInfo(memberAccess.Expression);
+        if (receiverTypeInfo.Type != null)
+        {
+            var receiverTypeName = receiverTypeInfo.Type.ToDisplayString();
+            if (!IsRouteBuilderType(receiverTypeName))
+            {
+                // Check implemented interfaces
+                var isRouteBuilder = false;
+                foreach (var iface in receiverTypeInfo.Type.AllInterfaces)
+                {
+                    if (IsRouteBuilderType(iface.ToDisplayString()))
+                    {
+                        isRouteBuilder = true;
+                        break;
+                    }
+                }
+                if (!isRouteBuilder)
+                    return null;
+            }
+        }
+
+        // Get type arguments from the generic name syntax
+        var typeArgs = genericName.TypeArgumentList.Arguments;
+        if (typeArgs.Count < 2)
+            return null;
+
+        var commandTypeInfo = semanticModel.GetTypeInfo(typeArgs[0]);
+        var responseTypeInfo = semanticModel.GetTypeInfo(typeArgs[1]);
+
+        var commandTypeName = commandTypeInfo.Type?.ToDisplayString() ?? typeArgs[0].ToString();
+        var responseTypeName = responseTypeInfo.Type?.ToDisplayString() ?? typeArgs[1].ToString();
+        var commandSimpleName = commandTypeInfo.Type?.Name ?? typeArgs[0].ToString();
+        var responseSimpleName = responseTypeInfo.Type?.Name ?? typeArgs[1].ToString();
+
+        // Get HTTP method
+        var httpMethod = GetHttpMethod(methodName, invocation);
+        if (httpMethod == null)
+            return null;
+
+        // Get path
+        var path = GetPathArgument(invocation, semanticModel, methodName);
+        if (path == null)
+            return null;
+
+        // Get source location
+        var location = invocation.GetLocation();
+        var lineSpan = location.GetLineSpan();
+
+        return new EndpointInfo
+        {
+            Method = httpMethod,
+            Path = path,
+            CommandTypeName = commandTypeName,
+            ResponseTypeName = responseTypeName,
+            CommandSimpleName = commandSimpleName,
+            ResponseSimpleName = responseSimpleName,
+            SourceFile = lineSpan.Path,
+            LineNumber = lineSpan.StartLinePosition.Line + 1
+        };
     }
 }

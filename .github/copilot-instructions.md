@@ -51,6 +51,32 @@ README.md
 
 ## Testes
 
+Sempre que uma nova implementação ou um bug ofr encontrar deve ser criado um teste unitário cobrindo o cenario do bug
+
+Para a biblioteca NativeLambdaRouter.SourceGenerator.OpenApi, a cada nova alteração de código deve-se implementar um novo projeto em `root/samples/` para testar os atributos e a geração de código, se deve criar uma solução seguindo do dotnet-lambda-solution como template `dotnet new dotnet-lambda-solution -n NativeLambdaRouter.SourceGenerator.OpenApi.Sample` e uma função lambda do tipo apigateway seguindo o seguinte comando
+
+### Testes de exemplo
+
+1. Criar a Solution
+
+```bash
+# Criar nova solution com camadas compartilhadas
+dotnet new dotnet-lambda-solution -n NativeLambdaRouter.SourceGenerator.OpenApi.Sample
+
+# Entrar no diretório
+cd NativeLambdaRouter.SourceGenerator.OpenApi.Sample
+```
+
+2. Adicionar Functions
+
+```bash
+# Adicionar API Gateway Function
+dotnet new dotnet-lambda-function -n NativeLambdaRouter.SourceGenerator.OpenApi.Sample.ApiGatewayFunction \
+    --triggerType apigateway \
+    --solutionName NativeLambdaRouter.SourceGenerator.OpenApi.Sample \
+    -o .
+```
+
 Testes unitários devem seguir a estrutura AAA, sempre gerar testes usando:
 
 - NSubstitute

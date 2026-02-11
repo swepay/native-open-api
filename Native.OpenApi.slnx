@@ -7,4 +7,7 @@
     <Project Path="tests/Native.OpenApi.Tests/Native.OpenApi.Tests.csproj" />
     <Project Path="tests/NativeLambdaRouter.SourceGenerator.OpenApi.Tests/NativeLambdaRouter.SourceGenerator.OpenApi.Tests.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/SampleApiFunction/SampleApiFunction.csproj" />
+  </Folder>
 </Solution>
