@@ -1,147 +1,90 @@
 ﻿# Native.OpenApi
 
-[![Build Status](https://github.com/swepay/native-open-api/actions/workflows/dotnet.yml/badge.svg)](https://github.com/swepay/native-open-api/actions/workflows/dotnet.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+Bibliotecas .NET 10 para gerenciamento de documentos OpenAPI 3.1, otimizadas para Native AOT.
 
-A collection of .NET libraries for OpenAPI 3.1 document management, optimized for Native AOT applications.
+Este repositório contém dois pacotes NuGet:
 
-## Packages
+  NativeOpenApi .............. Loading, linting, merging e rendering de documentos OpenAPI
+  NativeOpenApiGenerator ..... Source Generator que gera specs OpenAPI em compile-time a partir de endpoints NativeLambdaRouter
 
-| Package | NuGet | Description |
-|---------|-------|-------------|
-| [NativeOpenApi](src/Native.OpenApi/) | [![NuGet](https://img.shields.io/nuget/v/NativeOpenApi.svg)](https://www.nuget.org/packages/NativeOpenApi) | OpenAPI document loading, linting, merging, and HTML rendering |
-| [NativeOpenApiGenerator](src/NativeLambdaRouter.SourceGenerator.OpenApi/) | [![NuGet](https://img.shields.io/nuget/v/NativeOpenApiGenerator.svg)](https://www.nuget.org/packages/NativeOpenApiGenerator) | Source Generator for automatic OpenAPI spec generation |
 
-## Overview
+NativeOpenApi
+─────────────
 
-### NativeOpenApi
+Biblioteca core para carregar, validar, mesclar e renderizar documentos OpenAPI 3.1 sem reflection.
 
-Core library for working with OpenAPI 3.1 documents in Native AOT applications.
+  - Carregamento de specs a partir de embedded resources (JSON e YAML)
+  - Merge de múltiplas specs parciais em um documento consolidado
+  - Linting configurável com regras de validação
+  - Geração de páginas Redoc e Scalar
+  - Interface IGeneratedOpenApiSpec para integração com o Source Generator
+  - 100% Native AOT, zero reflection
 
-**Features:**
-- 📄 Load OpenAPI specs from embedded resources (JSON and YAML)
-- 🔀 Merge multiple partial specs into a consolidated document
-- ✅ Lint and validate documents against configurable rules
-- 📖 Generate Redoc and Scalar documentation pages
-- ⚡ Full Native AOT compatibility
+  Instalação: dotnet add package NativeOpenApi
 
-```bash
-dotnet add package NativeOpenApi
-```
+  Documentação completa: src/Native.OpenApi/README.md
 
-```csharp
-var resourceReader = new OpenApiResourceReader(typeof(Program).Assembly, "MyApp.");
-var loader = new MyOpenApiDocumentLoader(resourceReader);
-var merger = new MyOpenApiDocumentMerger();
-var linter = new OpenApiLinter(OpenApiLintOptions.Empty);
-var provider = new OpenApiDocumentProvider(loader, merger, linter);
 
-provider.WarmUp();
-var json = provider.Document.Json;
-```
+NativeOpenApiGenerator
+──────────────────────
 
-👉 [Full documentation](src/Native.OpenApi/README.md)
+Roslyn Source Generator que descobre endpoints MapGet, MapPost, MapPut, MapDelete, MapPatch
+do NativeLambdaRouter e gera a spec OpenAPI 3.1 em compile-time.
 
----
+  - Geração em compile-time (zero overhead em runtime)
+  - Descoberta automática de endpoints via análise sintática/semântica
+  - Operation IDs, tags, security e path parameters gerados automaticamente
+  - Implementa IGeneratedOpenApiSpec quando NativeOpenApi está referenciado
+  - Namespace customizável via OpenApiSpecName (resolve AssemblyName=bootstrap em AWS Lambda)
 
-### NativeOpenApiGenerator
+  Instalação: dotnet add package NativeOpenApiGenerator
 
-Roslyn Source Generator that automatically creates OpenAPI specifications from NativeLambdaRouter endpoints at compile time.
+  Documentação completa: src/NativeLambdaRouter.SourceGenerator.OpenApi/README.md
 
-**Features:**
-- 🔧 Compile-time generation (zero runtime overhead)
-- 🔍 Automatic endpoint discovery from `MapGet`, `MapPost`, etc.
-- 📝 Generates OpenAPI 3.1 compliant YAML
-- 🏷️ Auto-generates operation IDs, tags, and security definitions
 
-```bash
-dotnet add package NativeOpenApiGenerator
-```
+Quando usar cada pacote
+───────────────────────
 
-```csharp
-// Endpoints are discovered automatically at build time
-routes.MapGet<GetItemsCommand, GetItemsResponse>("/v1/items", ctx => new GetItemsCommand());
-routes.MapPost<CreateItemCommand, CreateItemResponse>("/v1/items", ctx => Deserialize<CreateItemCommand>(ctx.Body!));
+  Carregar/mesclar specs escritas manualmente ............... NativeOpenApi
+  Gerar specs automaticamente a partir de endpoints ......... NativeOpenApiGenerator
+  Gerar + mesclar com schemas comuns + servir documentação .. NativeOpenApi + NativeOpenApiGenerator
 
-// Access the generated spec (namespace = {AssemblyName}.Generated)
-using MyProject.Generated;
-string yaml = GeneratedOpenApiSpec.YamlContent;
-```
 
-👉 [Full documentation](src/NativeLambdaRouter.SourceGenerator.OpenApi/README.md)
+Estrutura do Repositório
+────────────────────────
 
----
+  src/
+    Native.OpenApi/                                Biblioteca core
+    NativeLambdaRouter.SourceGenerator.OpenApi/    Source Generator
 
-## Quick Start
+  tests/
+    Native.OpenApi.Tests/
+    NativeLambdaRouter.SourceGenerator.OpenApi.Tests/
 
-### Option 1: Document Loading & Merging Only
+  samples/
+    SampleApiFunction/                             Exemplo completo com AWS Lambda
 
-Use `NativeOpenApi` to load, merge, and serve your manually-written OpenAPI specs:
+  docs/
+    CHANGELOG.md
 
-```bash
-dotnet add package NativeOpenApi
-```
 
-### Option 2: Automatic Generation + Loading
+Requisitos
+──────────
 
-Use both packages together for automatic endpoint discovery combined with document management:
+  .NET 10.0+
+  C# 12.0+
 
-```bash
-dotnet add package NativeOpenApi
-dotnet add package NativeOpenApiGenerator
-```
 
-```csharp
-// Generated spec from your endpoints
-using MyProject.Generated;
-var generatedYaml = GeneratedOpenApiSpec.YamlContent;
+Build
+─────
 
-// Merge with common schemas and render documentation
-var provider = new OpenApiDocumentProvider(loader, merger, linter);
-var html = renderer.RenderRedoc("/openapi/v1/spec.json", "My API");
-```
+  git clone https://github.com/swepay/native-open-api.git
+  cd native-open-api
+  dotnet build
+  dotnet test
 
-## Project Structure
 
-```
-native-open-api/
-├── src/
-│   ├── Native.OpenApi/           # Core library
-│   │   ├── OpenApiDocumentLoader.cs
-│   │   ├── OpenApiDocumentMerger.cs
-│   │   ├── OpenApiDocumentProvider.cs
-│   │   ├── OpenApiLinter.cs
-│   │   ├── OpenApiHtmlRenderer.cs
-│   │   └── README.md
-│   │
-│   └── NativeLambdaRouter.SourceGenerator.OpenApi/ # Source Generator
-│       ├── OpenApiSourceGenerator.cs
-│       ├── OpenApiYamlGenerator.cs
-│       └── README.md
-│
-└── tests/
-    ├── Native.OpenApi.Tests/
-    └── NativeLambdaRouter.SourceGenerator.OpenApi.Tests/
-```
+License
+───────
 
-## Requirements
-
-- .NET 10.0 or later
-- C# 12.0 or later
-
-## Building from Source
-
-```bash
-git clone https://github.com/swepay/native-open-api.git
-cd native-open-api
-dotnet build
-dotnet test
-```
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-MIT
+  MIT
