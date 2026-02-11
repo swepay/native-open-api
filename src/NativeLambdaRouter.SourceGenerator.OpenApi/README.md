@@ -26,7 +26,7 @@ dotnet add package NativeOpenApiGenerator
 The generator automatically discovers endpoints in your `ConfigureRoutes` method:
 
 ```csharp
-public class MyRouter : LambdaRouter
+public class MyRouter : RoutedApiGatewayFunction
 {
     protected override void ConfigureRoutes(IRouteBuilder routes)
     {
