@@ -19,18 +19,14 @@ Copilot deve:
 └─ dotnet.yml
 
 src/
-├─ NativeMediator.SourceGenerator.DependencyInjection/
-├─ NativeFluentValidator.SourceGenerator.DependencyInjection/
-├─ Native.SourceGenerator.DependencyInjection/
-└─ Native.SourceGenerator.Configuration/
+├─ Native.OpenApi/
+└─ NativeLambdaRouter.SourceGenerator.OpenApi/
 
 tests/
-├─ NativeMediator.SourceGenerator.DependencyInjection.Tests/
-├─ NativeFluentValidator.SourceGenerator.DependencyInjection.Tests/
-├─ Native.SourceGenerator.DependencyInjection.Tests/
-└─ Native.SourceGenerator.Configuration.Tests/
+├─ Native.OpenApi.Tests/
+└─ NativeLambdaRouter.SourceGenerator.OpenApi.Tests/
 
-Native.SourceGenerators.slnx
+Native.OpenApi.slnx
 README.md
 
 ## Regras de Ouro
