@@ -13,6 +13,31 @@ namespace NativeLambdaRouter.SourceGenerator.OpenApi;
 [Generator]
 public sealed class OpenApiSourceGenerator : IIncrementalGenerator
 {
+    // Diagnostic descriptors for debugging
+    private static readonly DiagnosticDescriptor DebugEndpointFound = new(
+        "NLOAPI001",
+        "Endpoint Found",
+        "Found endpoint: {0} {1}",
+        "Debug",
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor DebugNoEndpoints = new(
+        "NLOAPI002",
+        "No Endpoints Found",
+        "No NativeLambdaRouter endpoints were discovered. Ensure you are using MapGet<TCommand, TResponse>, MapPost<TCommand, TResponse>, etc. on IRouteBuilder.",
+        "Debug",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor DebugMethodFound = new(
+        "NLOAPI003",
+        "Map Method Invocation",
+        "Found Map* invocation: {0}, ContainingType: {1}",
+        "Debug",
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true);
+
     /// <summary>
     /// Initializes the incremental source generator.
     /// </summary>
@@ -77,13 +102,47 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         if (symbolInfo.Symbol is not IMethodSymbol methodSymbol)
             return null;
 
-        // Check if the method is from IRouteBuilder or RouteBuilder
+        // Check if the method is from IRouteBuilder, RouteBuilder, or extension methods on these types
         var containingType = methodSymbol.ContainingType;
         if (containingType == null)
             return null;
 
         var typeName = containingType.ToDisplayString();
-        if (!typeName.Contains("IRouteBuilder") && !typeName.Contains("RouteBuilder"))
+        
+        // Also check if it's an extension method by looking at the first parameter type
+        var isRouteBuilderMethod = IsRouteBuilderType(typeName);
+        
+        if (!isRouteBuilderMethod && methodSymbol.IsExtensionMethod && methodSymbol.Parameters.Length > 0)
+        {
+            var firstParamType = methodSymbol.Parameters[0].Type.ToDisplayString();
+            isRouteBuilderMethod = IsRouteBuilderType(firstParamType);
+        }
+        
+        // Also check the receiver type for instance methods
+        if (!isRouteBuilderMethod && invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+        {
+            var receiverTypeInfo = semanticModel.GetTypeInfo(memberAccess.Expression);
+            if (receiverTypeInfo.Type != null)
+            {
+                var receiverTypeName = receiverTypeInfo.Type.ToDisplayString();
+                isRouteBuilderMethod = IsRouteBuilderType(receiverTypeName);
+                
+                // Also check interfaces implemented by the receiver
+                if (!isRouteBuilderMethod)
+                {
+                    foreach (var iface in receiverTypeInfo.Type.AllInterfaces)
+                    {
+                        if (IsRouteBuilderType(iface.ToDisplayString()))
+                        {
+                            isRouteBuilderMethod = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!isRouteBuilderMethod)
             return null;
 
         // Get type arguments (TCommand, TResponse)
@@ -118,6 +177,13 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
             SourceFile = lineSpan.Path,
             LineNumber = lineSpan.StartLinePosition.Line + 1
         };
+    }
+
+    private static bool IsRouteBuilderType(string typeName)
+    {
+        return typeName.Contains("IRouteBuilder") 
+            || typeName.Contains("RouteBuilder")
+            || typeName.Contains("NativeLambdaRouter");
     }
 
     private static string? GetHttpMethod(string methodName, InvocationExpressionSyntax invocation)
@@ -192,7 +258,21 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         ImmutableArray<EndpointInfo> endpoints)
     {
         if (endpoints.IsDefaultOrEmpty)
+        {
+            // Emit warning when no endpoints found
+            context.ReportDiagnostic(Diagnostic.Create(DebugNoEndpoints, Location.None));
             return;
+        }
+
+        // Emit info diagnostics for each endpoint found
+        foreach (var endpoint in endpoints)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                DebugEndpointFound, 
+                Location.None, 
+                endpoint.Method, 
+                endpoint.Path));
+        }
 
         var assemblyName = compilation.AssemblyName ?? "API";
         var apiTitle = assemblyName.Replace(".", " ");

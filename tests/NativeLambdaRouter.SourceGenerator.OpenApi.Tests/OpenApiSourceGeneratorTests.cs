@@ -3,7 +3,7 @@ namespace NativeLambdaRouter.SourceGenerator.OpenApi.Tests;
 public sealed class OpenApiSourceGeneratorTests
 {
     [Fact]
-    public void Generator_WithNoEndpoints_GeneratesEmptySpec()
+    public void Generator_WithNoEndpoints_EmitsWarningDiagnostic()
     {
         // Arrange
         var sourceCode = @"
@@ -18,8 +18,8 @@ public class MyService
         // Act
         var result = GeneratorTestHelper.RunGenerator(sourceCode);
 
-        // Assert
-        result.Diagnostics.Should().BeEmpty();
+        // Assert - Should emit NLOAPI002 warning when no endpoints found
+        result.Diagnostics.Should().ContainSingle(d => d.Id == "NLOAPI002");
         result.GeneratedTrees.Should().BeEmpty();
     }
 

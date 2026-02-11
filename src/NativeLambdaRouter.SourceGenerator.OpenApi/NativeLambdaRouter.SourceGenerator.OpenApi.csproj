@@ -19,7 +19,7 @@
   <!-- Package metadata -->
   <PropertyGroup>
     <PackageId>NativeLambdaRouter.SourceGenerator.OpenApi</PackageId>
-    <Version>1.2.4</Version>
+    <Version>1.2.5</Version>
     <Authors>Swepay</Authors>
     <Description>Source Generator that automatically generates OpenAPI specifications from NativeLambdaRouter endpoint configurations at compile time.</Description>
     <PackageTags>openapi;source-generator;roslyn;native-aot;code-generation;api-documentation</PackageTags>
@@ -35,6 +35,11 @@
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
     <None Include="..\..\native-open-api.png" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
   </ItemGroup>
 
   <ItemGroup>
