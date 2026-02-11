@@ -45,79 +45,56 @@ The generator runs automatically during compilation. No additional configuration
 
 ### 3. Access the generated spec
 
+The class is generated in the `{AssemblyName}.Generated` namespace:
+
 ```csharp
-using Native.OpenApi.Generated;
+using MyProject.Generated;
 
 // Get the full OpenAPI YAML specification
-string yaml = GeneratedOpenApiSpec.Yaml;
+string yaml = GeneratedOpenApiSpec.YamlContent;
 
 // Get endpoint count
 int count = GeneratedOpenApiSpec.EndpointCount;
 
 // Get list of all endpoints
-var endpoints = GeneratedOpenApiSpec.Endpoints;
-foreach (var (method, path) in endpoints)
+foreach (var (method, path) in GeneratedOpenApiSpec.EndpointList)
 {
     Console.WriteLine($"{method} {path}");
 }
+
+// Use as IGeneratedOpenApiSpec (when NativeOpenApi is referenced)
+IGeneratedOpenApiSpec spec = GeneratedOpenApiSpec.Instance;
 ```
 
 ## Generated Output
 
-The generator creates a `GeneratedOpenApiSpec` class in the `Native.OpenApi.Generated` namespace:
+The generator creates a `GeneratedOpenApiSpec` class in the `{AssemblyName}.Generated` namespace.
+
+When `NativeOpenApi` is referenced, it implements `IGeneratedOpenApiSpec`:
 
 ```csharp
-namespace Native.OpenApi.Generated;
+// For assembly "MyProject" with NativeOpenApi referenced
+namespace MyProject.Generated;
 
-public static class GeneratedOpenApiSpec
+public sealed class GeneratedOpenApiSpec : Native.OpenApi.IGeneratedOpenApiSpec
 {
-    public const string Yaml = @"
+    public static readonly GeneratedOpenApiSpec Instance = new();
+
+    public const string YamlContent = @"
 openapi: ""3.1.0""
 info:
-  title: ""MyApi""
+  title: ""MyProject""
   version: ""1.0.0""
 paths:
   /v1/items:
     get:
       operationId: getV1Items
-      summary: ""Get GetItems""
-      tags:
-        - items
-      security:
-        - JwtBearer: []
-      responses:
-        ""200"":
-          description: ""Successful response""
-          content:
-            application/json:
-              schema:
-                $ref: ""#/components/schemas/GetItemsResponse""
-        ""400"":
-          $ref: ""#/components/responses/BadRequest""
-        ""401"":
-          $ref: ""#/components/responses/Unauthorized""
-        ""500"":
-          $ref: ""#/components/responses/InternalServerError""
-    post:
-      operationId: postV1Items
-      summary: ""Create CreateItem""
-      tags:
-        - items
-      security:
-        - JwtBearer: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: ""#/components/schemas/CreateItemCommand""
-      responses:
-        ...
+      ...
 ";
 
     public const int EndpointCount = 5;
     
-    public static readonly (string Method, string Path)[] Endpoints = new[]
+    public static readonly (string Method, string Path)[] EndpointList = new[]
     {
         ("DELETE", "/v1/items/{id}"),
         ("GET", "/v1/items"),
@@ -127,6 +104,8 @@ paths:
     };
 }
 ```
+
+Without `NativeOpenApi`, the class is standalone (no interface).
 
 ## Supported Mapping Methods
 
@@ -159,22 +138,79 @@ Combine with `NativeOpenApi` for a complete solution:
 
 ```csharp
 using Native.OpenApi;
-using Native.OpenApi.Generated;
+using MyProject.Generated;
 
 // Use the generated spec as part of your document loading
 public class MyOpenApiDocumentLoader : OpenApiDocumentLoaderBase
 {
+    public MyOpenApiDocumentLoader(OpenApiResourceReader reader) : base(reader) { }
+
+    public override IReadOnlyList<OpenApiDocumentPart> LoadCommon() => [];
+
     public override IReadOnlyList<OpenApiDocumentPart> LoadPartials()
     {
         return new List<OpenApiDocumentPart>
         {
-            // Load from generated spec
-            LoadFromString("generated", GeneratedOpenApiSpec.Yaml),
+            // Load from generated spec via IGeneratedOpenApiSpec
+            LoadFromGeneratedSpec("my-api", GeneratedOpenApiSpec.Instance),
             // Load additional partials
             Load("schemas", "openapi/schemas.yaml")
         };
     }
 }
+```
+
+### Multi-Project Architecture
+
+The generator uses the **assembly name** as namespace, so each project gets its own unique class:
+
+```
+Functions.Admin      → namespace Functions.Admin.Generated      → GeneratedOpenApiSpec
+Functions.Identity   → namespace Functions.Identity.Generated   → GeneratedOpenApiSpec
+Functions.OpenId     → namespace Functions.OpenId.Generated     → GeneratedOpenApiSpec
+```
+
+When `NativeOpenApi` is referenced, the generated class implements `IGeneratedOpenApiSpec`,
+enabling the `Functions.OpenApi` project to merge all specs polymorphically:
+
+```csharp
+// In Functions.OpenApi — merges all generated specs into a single document
+public class ConsolidatedOpenApiDocumentLoader : OpenApiDocumentLoaderBase
+{
+    public ConsolidatedOpenApiDocumentLoader(OpenApiResourceReader reader) : base(reader) { }
+
+    public override IReadOnlyList<OpenApiDocumentPart> LoadCommon()
+    {
+        return [Load("schemas", "openapi/schemas.yaml"),
+                Load("responses", "openapi/responses.yaml"),
+                Load("security", "openapi/security.yaml")];
+    }
+
+    public override IReadOnlyList<OpenApiDocumentPart> LoadPartials()
+    {
+        return [LoadFromGeneratedSpec("admin", Functions.Admin.Generated.GeneratedOpenApiSpec.Instance),
+                LoadFromGeneratedSpec("identity", Functions.Identity.Generated.GeneratedOpenApiSpec.Instance),
+                LoadFromGeneratedSpec("openid", Functions.OpenId.Generated.GeneratedOpenApiSpec.Instance)];
+    }
+}
+```
+
+Each Function project only needs:
+
+```xml
+<!-- Functions.Admin.csproj, Functions.Identity.csproj, Functions.OpenId.csproj -->
+<PackageReference Include="NativeOpenApiGenerator" Version="1.3.0" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+<PackageReference Include="NativeOpenApi" Version="1.3.0" />
+```
+
+And the consolidator project:
+
+```xml
+<!-- Functions.OpenApi.csproj -->
+<PackageReference Include="NativeOpenApi" Version="1.3.0" />
+<ProjectReference Include="..\Functions.Admin\Functions.Admin.csproj" />
+<ProjectReference Include="..\Functions.Identity\Functions.Identity.csproj" />
+<ProjectReference Include="..\Functions.OpenId\Functions.OpenId.csproj" />
 ```
 
 ## Requirements
@@ -188,7 +224,31 @@ public class MyOpenApiDocumentLoader : OpenApiDocumentLoaderBase
 1. **Syntax Analysis**: The generator scans your code for `Map*` method invocations
 2. **Semantic Analysis**: Validates that calls are on `IRouteBuilder` and extracts type information
 3. **Code Generation**: Creates the `GeneratedOpenApiSpec` class with the OpenAPI YAML
-4. **Build Integration**: The generated file is automatically included in compilation
+4. **Build Integration**: The generated file is automatically included in compilation — no extra configuration needed
+
+> **Note:** The generated class is injected directly into the compilation in memory. You do **not** need to add `EmitCompilerGeneratedFiles` to your `.csproj` for the generator to work. That setting only saves a physical copy of the generated `.cs` files to disk for inspection/debug purposes.
+
+<details>
+<summary>🔍 Debug: Inspecting generated files on disk</summary>
+
+If you want to see the generated `.cs` files physically on disk, add to your `.csproj`:
+
+```xml
+<PropertyGroup>
+  <!-- Optional: saves generated files to disk for inspection -->
+  <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+</PropertyGroup>
+```
+
+The files will be saved to:
+
+```
+obj/Debug/net10.0/generated/NativeLambdaRouter.SourceGenerator.OpenApi/
+    NativeLambdaRouter.SourceGenerator.OpenApi.OpenApiSourceGenerator/
+        GeneratedOpenApiSpec.g.cs
+```
+
+</details>
 
 ## Related Packages
 

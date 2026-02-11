@@ -28,6 +28,7 @@
     <ProjectReference Include="..\..\src\NativeLambdaRouter.SourceGenerator.OpenApi\NativeLambdaRouter.SourceGenerator.OpenApi.csproj" 
                       OutputItemType="Analyzer" 
                       ReferenceOutputAssembly="true" />
+    <ProjectReference Include="..\..\src\Native.OpenApi\Native.OpenApi.csproj" />
   </ItemGroup>
 
 </Project>

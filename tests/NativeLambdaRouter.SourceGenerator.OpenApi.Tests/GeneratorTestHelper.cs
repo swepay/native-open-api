@@ -12,7 +12,7 @@ internal static class GeneratorTestHelper
     /// <summary>
     /// Runs the OpenApiSourceGenerator on the given source code and returns the compilation result.
     /// </summary>
-    public static GeneratorDriverRunResult RunGenerator(string sourceCode, params MetadataReference[] additionalReferences)
+    public static GeneratorDriverRunResult RunGenerator(string sourceCode, string assemblyName = "TestAssembly", params MetadataReference[] additionalReferences)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
 
@@ -34,7 +34,7 @@ internal static class GeneratorTestHelper
         references.AddRange(additionalReferences);
 
         var compilation = CSharpCompilation.Create(
-            "TestAssembly",
+            assemblyName,
             new[] { syntaxTree },
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));

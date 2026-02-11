@@ -63,8 +63,9 @@ dotnet add package NativeOpenApiGenerator
 routes.MapGet<GetItemsCommand, GetItemsResponse>("/v1/items", ctx => new GetItemsCommand());
 routes.MapPost<CreateItemCommand, CreateItemResponse>("/v1/items", ctx => Deserialize<CreateItemCommand>(ctx.Body!));
 
-// Access the generated spec
-string yaml = Native.OpenApi.Generated.GeneratedOpenApiSpec.Yaml;
+// Access the generated spec (namespace = {AssemblyName}.Generated)
+using MyProject.Generated;
+string yaml = GeneratedOpenApiSpec.YamlContent;
 ```
 
 👉 [Full documentation](src/NativeLambdaRouter.SourceGenerator.OpenApi/README.md)
@@ -92,7 +93,8 @@ dotnet add package NativeOpenApiGenerator
 
 ```csharp
 // Generated spec from your endpoints
-var generatedYaml = Native.OpenApi.Generated.GeneratedOpenApiSpec.Yaml;
+using MyProject.Generated;
+var generatedYaml = GeneratedOpenApiSpec.YamlContent;
 
 // Merge with common schemas and render documentation
 var provider = new OpenApiDocumentProvider(loader, merger, linter);

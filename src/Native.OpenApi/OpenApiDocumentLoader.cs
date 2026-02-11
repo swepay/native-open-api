@@ -31,17 +31,47 @@ public abstract class OpenApiDocumentLoaderBase : IOpenApiDocumentLoader
     private readonly OpenApiResourceReader _resourceReader;
 
     /// <summary>
-    /// Shared YAML deserializer instance (thread-safe after construction).
+    /// Lazy-initialized YAML deserializer (uses static context for AOT, falls back to dynamic).
     /// </summary>
-    private static readonly IDeserializer YamlDeserializer = new StaticDeserializerBuilder(new OpenApiYamlStaticContext())
-        .Build();
+    private static readonly Lazy<IDeserializer> LazyYamlDeserializer = new(CreateDeserializer);
 
     /// <summary>
-    /// Shared YAML to JSON serializer instance (thread-safe after construction).
+    /// Lazy-initialized YAML-to-JSON serializer (uses static context for AOT, falls back to dynamic).
     /// </summary>
-    private static readonly ISerializer YamlToJsonSerializer = new StaticSerializerBuilder(new OpenApiYamlStaticContext())
-        .JsonCompatible()
-        .Build();
+    private static readonly Lazy<ISerializer> LazyYamlToJsonSerializer = new(CreateJsonSerializer);
+
+    private static IDeserializer YamlDeserializer => LazyYamlDeserializer.Value;
+    private static ISerializer YamlToJsonSerializer => LazyYamlToJsonSerializer.Value;
+
+    private static IDeserializer CreateDeserializer()
+    {
+        try
+        {
+            return new StaticDeserializerBuilder(new OpenApiYamlStaticContext()).Build();
+        }
+        catch (NotImplementedException)
+        {
+            // Fallback to dynamic deserializer (non-AOT environments such as tests)
+#pragma warning disable IL3050, IL2026
+            return new DeserializerBuilder().Build();
+#pragma warning restore IL3050, IL2026
+        }
+    }
+
+    private static ISerializer CreateJsonSerializer()
+    {
+        try
+        {
+            return new StaticSerializerBuilder(new OpenApiYamlStaticContext()).JsonCompatible().Build();
+        }
+        catch (NotImplementedException)
+        {
+            // Fallback to dynamic serializer (non-AOT environments such as tests)
+#pragma warning disable IL3050, IL2026
+            return new SerializerBuilder().JsonCompatible().Build();
+#pragma warning restore IL3050, IL2026
+        }
+    }
 
     /// <summary>
     /// Initializes the loader with a resource reader.
@@ -98,5 +128,42 @@ public abstract class OpenApiDocumentLoaderBase : IOpenApiDocumentLoader
     {
         return path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase)
             || path.EndsWith(".yml", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Creates an <see cref="OpenApiDocumentPart"/> from an <see cref="IGeneratedOpenApiSpec"/>
+    /// produced by the NativeLambdaRouter Source Generator.
+    /// </summary>
+    /// <param name="name">A logical name for the part (e.g., 'admin', 'identity').</param>
+    /// <param name="spec">The generated OpenAPI spec instance.</param>
+    /// <returns>The loaded document part.</returns>
+    protected static OpenApiDocumentPart LoadFromGeneratedSpec(string name, IGeneratedOpenApiSpec spec)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+
+        var raw = spec.Yaml;
+        var yamlObject = YamlDeserializer.Deserialize<object>(raw);
+        var json = YamlToJsonSerializer.Serialize(yamlObject);
+        var root = JsonNode.Parse(json, null, new JsonDocumentOptions { AllowTrailingCommas = true })
+                   ?? throw new InvalidOperationException($"Generated OpenAPI spec '{name}' produced empty content.");
+        return new OpenApiDocumentPart(name, $"generated:{name}", root, raw);
+    }
+
+    /// <summary>
+    /// Creates an <see cref="OpenApiDocumentPart"/> from raw YAML content.
+    /// This is useful when you have the YAML string directly (e.g., from a generated constant).
+    /// </summary>
+    /// <param name="name">A logical name for the part (e.g., 'admin', 'identity').</param>
+    /// <param name="yaml">The raw OpenAPI YAML content.</param>
+    /// <returns>The loaded document part.</returns>
+    protected static OpenApiDocumentPart LoadFromYaml(string name, string yaml)
+    {
+        ArgumentNullException.ThrowIfNull(yaml);
+
+        var yamlObject = YamlDeserializer.Deserialize<object>(yaml);
+        var json = YamlToJsonSerializer.Serialize(yamlObject);
+        var root = JsonNode.Parse(json, null, new JsonDocumentOptions { AllowTrailingCommas = true })
+                   ?? throw new InvalidOperationException($"YAML spec '{name}' produced empty content.");
+        return new OpenApiDocumentPart(name, $"yaml:{name}", root, yaml);
     }
 }

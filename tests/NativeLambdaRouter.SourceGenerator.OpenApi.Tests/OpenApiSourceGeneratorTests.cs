@@ -53,6 +53,196 @@ public class MyRouter
     }
 
     [Fact]
+    public void Generator_UsesAssemblyNameAsNamespace()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemsCommand { }
+public class GetItemsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemsCommand, GetItemsResponse>(""/v1/items"", ctx => new GetItemsCommand());
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode, "NativeGuardBackend.Functions.Admin");
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert - Should use assembly name as namespace
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("namespace NativeGuardBackend.Functions.Admin.Generated;");
+        generatedSource.Should().NotContain("namespace Native.OpenApi.Generated;");
+    }
+
+    [Fact]
+    public void Generator_DifferentAssemblies_ProduceDifferentNamespaces()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemsCommand { }
+public class GetItemsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemsCommand, GetItemsResponse>(""/v1/items"", ctx => new GetItemsCommand());
+    }
+}
+";
+
+        // Act
+        var resultAdmin = GeneratorTestHelper.RunGenerator(sourceCode, "Functions.Admin");
+        var resultIdentity = GeneratorTestHelper.RunGenerator(sourceCode, "Functions.Identity");
+
+        var adminSource = GeneratorTestHelper.GetGeneratedSource(resultAdmin, "GeneratedOpenApiSpec.g.cs");
+        var identitySource = GeneratorTestHelper.GetGeneratedSource(resultIdentity, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert - Each assembly should get its own namespace
+        adminSource.Should().Contain("namespace Functions.Admin.Generated;");
+        identitySource.Should().Contain("namespace Functions.Identity.Generated;");
+    }
+
+    [Fact]
+    public void Generator_WithoutNativeOpenApiRef_DoesNotImplementInterface()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemsCommand { }
+public class GetItemsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemsCommand, GetItemsResponse>(""/v1/items"", ctx => new GetItemsCommand());
+    }
+}
+";
+
+        // Act - No Native.OpenApi reference
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert - Should not implement IGeneratedOpenApiSpec
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().NotContain("IGeneratedOpenApiSpec");
+        generatedSource.Should().Contain("public sealed class GeneratedOpenApiSpec");
+    }
+
+    [Fact]
+    public void Generator_WithNativeOpenApiRef_ImplementsInterface()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemsCommand { }
+public class GetItemsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemsCommand, GetItemsResponse>(""/v1/items"", ctx => new GetItemsCommand());
+    }
+}
+";
+
+        // Act - Add Native.OpenApi reference
+        var nativeOpenApiRef = Microsoft.CodeAnalysis.MetadataReference.CreateFromFile(
+            typeof(Native.OpenApi.IGeneratedOpenApiSpec).Assembly.Location);
+        var result = GeneratorTestHelper.RunGenerator(sourceCode, "TestAssembly", nativeOpenApiRef);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert - Should implement IGeneratedOpenApiSpec
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("Native.OpenApi.IGeneratedOpenApiSpec");
+        generatedSource.Should().Contain("public sealed class GeneratedOpenApiSpec : Native.OpenApi.IGeneratedOpenApiSpec");
+    }
+
+    [Fact]
+    public void Generator_GeneratesInstanceSingleton()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemsCommand { }
+public class GetItemsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemsCommand, GetItemsResponse>(""/v1/items"", ctx => new GetItemsCommand());
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert - Should have singleton instance
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("public static readonly GeneratedOpenApiSpec Instance = new();");
+    }
+
+    [Fact]
+    public void Generator_GeneratesYamlContentConstant()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemsCommand { }
+public class GetItemsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemsCommand, GetItemsResponse>(""/v1/items"", ctx => new GetItemsCommand());
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert - Should have YamlContent constant and EndpointList
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("public const string YamlContent = @\"");
+        generatedSource.Should().Contain("public static readonly (string Method, string Path)[] EndpointList");
+        generatedSource.Should().Contain("openapi: \"\"3.1.0\"\"");
+    }
+
+    [Fact]
     public void Generator_WithMultipleEndpoints_GeneratesSpec()
     {
         // Arrange

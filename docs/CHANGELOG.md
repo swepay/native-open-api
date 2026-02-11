@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-02-11
+
+### ⚠️ Breaking Changes
+- **Source Generator**: Generated class namespace changed from `Native.OpenApi.Generated` to `{AssemblyName}.Generated`.
+  This enables multi-project architectures where each project gets its own unique namespace, avoiding conflicts.
+- **Source Generator**: Generated class changed from `static` to `sealed` with a `public static readonly Instance` singleton.
+- **Source Generator**: `Yaml` constant renamed to `YamlContent`.
+- **Source Generator**: `Endpoints` field renamed to `EndpointList`.
+
+### Added
+- **Native.OpenApi**: New `IGeneratedOpenApiSpec` interface for polymorphic access to generated specs.
+- **Source Generator**: When `NativeOpenApi` package is referenced, the generated class implements `IGeneratedOpenApiSpec` automatically.
+  When not referenced, the class is generated standalone (no interface dependency).
+- **Native.OpenApi**: New `LoadFromGeneratedSpec(name, spec)` method on `OpenApiDocumentLoaderBase`
+  for loading generated specs as `OpenApiDocumentPart` for merging.
+- **Native.OpenApi**: New `LoadFromYaml(name, yaml)` method on `OpenApiDocumentLoaderBase`
+  for loading raw YAML strings as `OpenApiDocumentPart`.
+- **Native.OpenApi**: YAML deserializer now uses lazy initialization with automatic fallback from
+  static (AOT) to dynamic (reflection) mode for better test compatibility.
+
+### Changed
+- **Documentation**: Updated all READMEs with multi-project architecture examples showing how to
+  consolidate specs from Admin, Identity, OpenId into a single OpenAPI document.
+
+## [1.2.7] - 2026-02-11
+
+### Fixed
+- **Documentation**: Clarified that `EmitCompilerGeneratedFiles` is **not required** for the Source Generator
+  to work. It only saves a physical copy of generated files to disk for debug/inspection purposes.
+  The generated `GeneratedOpenApiSpec` class is injected directly into compilation in memory.
+
+### Changed
+- **Sample README**: Added explicit "optional, only for debug" callout around `EmitCompilerGeneratedFiles`
+  with full explanation of the generated file path.
+- **Generator README**: Added note and collapsible section explaining the difference between
+  the generator working (automatic) vs. inspecting generated files on disk (optional).
+
 ## [1.2.6] - 2025-07-16
 
 ### Fixed

@@ -38,23 +38,29 @@ dotnet build
 
 ## OpenAPI Spec Gerada
 
-Durante o build, o Source Generator cria automaticamente a classe `GeneratedOpenApiSpec`:
+Durante o build, o Source Generator cria automaticamente a classe `GeneratedOpenApiSpec` no namespace `{AssemblyName}.Generated`:
 
 ```csharp
-namespace Native.OpenApi.Generated;
+namespace SampleApiFunction.Generated;
 
-public static class GeneratedOpenApiSpec
+public sealed class GeneratedOpenApiSpec : Native.OpenApi.IGeneratedOpenApiSpec
 {
-    public const string Yaml = @"..."; // OpenAPI 3.1 YAML completo
+    public static readonly GeneratedOpenApiSpec Instance = new();
+    public const string YamlContent = @"..."; // OpenAPI 3.1 YAML completo
     public const int EndpointCount = 6;
-    public static readonly (string Method, string Path)[] Endpoints = ...;
+    public static readonly (string Method, string Path)[] EndpointList = ...;
 }
 ```
 
-Para visualizar os arquivos gerados em disco, adicione no `.csproj`:
+### Visualizar arquivos gerados (opcional, apenas para debug)
+
+O Source Generator injeta o código diretamente na compilação em memória — **não é necessário nenhuma configuração adicional** no `.csproj` para funcionar.
+
+Se quiser **inspecionar** os arquivos `.cs` gerados fisicamente em disco, adicione no `.csproj`:
 
 ```xml
 <PropertyGroup>
+  <!-- Opcional: salva cópia dos arquivos gerados em disco para inspeção -->
   <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
 </PropertyGroup>
 ```
@@ -62,21 +68,28 @@ Para visualizar os arquivos gerados em disco, adicione no `.csproj`:
 Os arquivos ficam em:
 
 ```
-obj/Debug/net10.0/generated/NativeLambdaRouter.SourceGenerator.OpenApi/...
+obj/Debug/net10.0/generated/NativeLambdaRouter.SourceGenerator.OpenApi/
+    NativeLambdaRouter.SourceGenerator.OpenApi.OpenApiSourceGenerator/
+        GeneratedOpenApiSpec.g.cs
 ```
+
+> ⚠️ **Isso NÃO é necessário para usar o generator.** A classe `GeneratedOpenApiSpec` já está disponível na compilação automaticamente.
 
 ## Usando a Spec Gerada
 
 ```csharp
-using Native.OpenApi.Generated;
+using SampleApiFunction.Generated;
 
-var yaml = GeneratedOpenApiSpec.Yaml;
+var yaml = GeneratedOpenApiSpec.YamlContent;
 var count = GeneratedOpenApiSpec.EndpointCount; // 6
 
-foreach (var (method, path) in GeneratedOpenApiSpec.Endpoints)
+foreach (var (method, path) in GeneratedOpenApiSpec.EndpointList)
 {
     Console.WriteLine($"{method} {path}");
 }
+
+// Como IGeneratedOpenApiSpec (quando NativeOpenApi está referenciado)
+IGeneratedOpenApiSpec spec = GeneratedOpenApiSpec.Instance;
 ```
 
 ## Diagnósticos do Source Generator
