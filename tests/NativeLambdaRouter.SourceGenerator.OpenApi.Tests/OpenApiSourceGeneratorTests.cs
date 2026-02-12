@@ -552,4 +552,176 @@ public class MyRouter
         adminSource.Should().Contain("namespace Functions.Admin.Generated;");
         identitySource.Should().Contain("namespace Functions.Identity.Generated;");
     }
+
+    [Fact]
+    public void Generator_WithAllowAnonymous_OmitsSecurityBlock()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetPublicCommand { }
+public class GetPublicResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetPublicCommand, GetPublicResponse>(""/v1/public"", ctx => new GetPublicCommand())
+            .AllowAnonymous();
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — The YAML should NOT contain a security block for this endpoint
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("/v1/public");
+        generatedSource.Should().NotContain("security:");
+        generatedSource.Should().NotContain("JwtBearer");
+    }
+
+    [Fact]
+    public void Generator_WithProduces_UsesCustomContentType()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetDocsCommand { }
+public class GetDocsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetDocsCommand, GetDocsResponse>(""/v1/docs"", ctx => new GetDocsCommand())
+            .Produces(""text/html"");
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — The YAML should use text/html instead of application/json
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("text/html");
+        generatedSource.Should().NotContain("application/json");
+    }
+
+    [Fact]
+    public void Generator_WithAllowAnonymousAndProduces_AppliesBoth()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetOpenApiCommand { }
+public class GetOpenApiResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetOpenApiCommand, GetOpenApiResponse>(""/v1/openapi"", ctx => new GetOpenApiCommand())
+            .AllowAnonymous()
+            .Produces(""text/html"");
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — No security block AND custom content type
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("/v1/openapi");
+        generatedSource.Should().NotContain("security:");
+        generatedSource.Should().NotContain("JwtBearer");
+        generatedSource.Should().Contain("text/html");
+        generatedSource.Should().NotContain("application/json");
+    }
+
+    [Fact]
+    public void Generator_MixedEndpoints_AuthAndAnonymous_GeneratesCorrectSecurity()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemsCommand { }
+public class GetItemsResponse { }
+public class GetPublicCommand { }
+public class GetPublicResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemsCommand, GetItemsResponse>(""/v1/items"", ctx => new GetItemsCommand());
+        routes.MapGet<GetPublicCommand, GetPublicResponse>(""/v1/public"", ctx => new GetPublicCommand())
+            .AllowAnonymous();
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — /v1/items should have security, /v1/public should not
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("/v1/items");
+        generatedSource.Should().Contain("/v1/public");
+        // The authenticated endpoint still has security
+        generatedSource.Should().Contain("security:");
+        generatedSource.Should().Contain("JwtBearer");
+    }
+
+    [Fact]
+    public void Generator_WithProducesReversedOrder_AppliesBoth()
+    {
+        // Arrange — Produces before AllowAnonymous in the chain
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetDocsCommand { }
+public class GetDocsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetDocsCommand, GetDocsResponse>(""/v1/docs"", ctx => new GetDocsCommand())
+            .Produces(""text/html"")
+            .AllowAnonymous();
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — Both should be applied regardless of order
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().NotContain("security:");
+        generatedSource.Should().Contain("text/html");
+    }
 }

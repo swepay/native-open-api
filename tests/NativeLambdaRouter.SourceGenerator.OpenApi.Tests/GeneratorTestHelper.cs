@@ -90,14 +90,21 @@ internal static class GeneratorTestHelper
         return @"
 namespace TestApp;
 
+public interface IRouteEndpointBuilder
+{
+    IRouteEndpointBuilder AllowAnonymous();
+    IRouteEndpointBuilder Produces(string contentType);
+    IRouteEndpointBuilder WithHeader(string name, string value);
+}
+
 public interface IRouteBuilder
 {
-    void MapGet<TCommand, TResponse>(string path, Func<object, TCommand> handler);
-    void MapPost<TCommand, TResponse>(string path, Func<object, TCommand> handler);
-    void MapPut<TCommand, TResponse>(string path, Func<object, TCommand> handler);
-    void MapDelete<TCommand, TResponse>(string path, Func<object, TCommand> handler);
-    void MapPatch<TCommand, TResponse>(string path, Func<object, TCommand> handler);
-    void Map<TCommand, TResponse>(string method, string path, Func<object, TCommand> handler);
+    IRouteEndpointBuilder MapGet<TCommand, TResponse>(string path, Func<object, TCommand> handler);
+    IRouteEndpointBuilder MapPost<TCommand, TResponse>(string path, Func<object, TCommand> handler);
+    IRouteEndpointBuilder MapPut<TCommand, TResponse>(string path, Func<object, TCommand> handler);
+    IRouteEndpointBuilder MapDelete<TCommand, TResponse>(string path, Func<object, TCommand> handler);
+    IRouteEndpointBuilder MapPatch<TCommand, TResponse>(string path, Func<object, TCommand> handler);
+    IRouteEndpointBuilder Map<TCommand, TResponse>(string method, string path, Func<object, TCommand> handler);
 }
 ";
     }

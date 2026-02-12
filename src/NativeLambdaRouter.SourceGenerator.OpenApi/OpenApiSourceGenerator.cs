@@ -181,7 +181,7 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         var location = invocation.GetLocation();
         var lineSpan = location.GetLineSpan();
 
-        return new EndpointInfo
+        var endpoint = new EndpointInfo
         {
             Method = httpMethod,
             Path = path,
@@ -192,6 +192,11 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
             SourceFile = lineSpan.Path,
             LineNumber = lineSpan.StartLinePosition.Line + 1
         };
+
+        // Detect fluent chain options (.AllowAnonymous(), .Produces(...), etc.)
+        ApplyFluentChainOptions(invocation, endpoint);
+
+        return endpoint;
     }
 
     private static bool IsRouteBuilderType(string typeName)
@@ -199,6 +204,53 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         return typeName.Contains("IRouteBuilder")
             || typeName.Contains("RouteBuilder")
             || typeName.Contains("NativeLambdaRouter");
+    }
+
+    /// <summary>
+    /// Walks up the syntax tree from a Map* invocation to detect fluent chain calls
+    /// such as .AllowAnonymous() and .Produces("text/html").
+    /// </summary>
+    private static void ApplyFluentChainOptions(InvocationExpressionSyntax mapInvocation, EndpointInfo endpoint)
+    {
+        // In the Roslyn AST, a fluent chain like:
+        //   routes.MapGet<Cmd, Rsp>("/path", ctx => new Cmd()).AllowAnonymous().Produces("text/html")
+        // is represented as nested InvocationExpressions:
+        //   Produces( AllowAnonymous( MapGet(...) ) )
+        //
+        // The MapGet invocation is the Expression inside the MemberAccess of AllowAnonymous(),
+        // and AllowAnonymous() is the Expression inside the MemberAccess of Produces().
+        //
+        // So we walk UP from the MapGet node through parent nodes.
+
+        SyntaxNode current = mapInvocation;
+
+        while (current.Parent is MemberAccessExpressionSyntax parentMemberAccess
+               && parentMemberAccess.Parent is InvocationExpressionSyntax parentInvocation)
+        {
+            var chainedMethodName = parentMemberAccess.Name switch
+            {
+                IdentifierNameSyntax id => id.Identifier.Text,
+                GenericNameSyntax gn => gn.Identifier.Text,
+                _ => null
+            };
+
+            if (chainedMethodName == "AllowAnonymous")
+            {
+                endpoint.RequiresAuth = false;
+            }
+            else if (chainedMethodName == "Produces")
+            {
+                // Extract the content type from the first string argument
+                var args = parentInvocation.ArgumentList.Arguments;
+                if (args.Count > 0 && args[0].Expression is LiteralExpressionSyntax literal
+                    && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
+                {
+                    endpoint.ProducesContentType = literal.Token.ValueText;
+                }
+            }
+
+            current = parentInvocation;
+        }
     }
 
     private static string? GetHttpMethod(string methodName, InvocationExpressionSyntax invocation)
@@ -462,7 +514,7 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         var location = invocation.GetLocation();
         var lineSpan = location.GetLineSpan();
 
-        return new EndpointInfo
+        var endpoint = new EndpointInfo
         {
             Method = httpMethod,
             Path = path,
@@ -473,5 +525,10 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
             SourceFile = lineSpan.Path,
             LineNumber = lineSpan.StartLinePosition.Line + 1
         };
+
+        // Detect fluent chain options (.AllowAnonymous(), .Produces(...), etc.)
+        ApplyFluentChainOptions(invocation, endpoint);
+
+        return endpoint;
     }
 }

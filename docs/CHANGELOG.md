@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.2] - 2026-02-11
+
+### Fixed
+- **Source Generator**: Fluent chain calls `.AllowAnonymous()` and `.Produces("contentType")` are now
+  detected by walking up the Roslyn syntax tree from the `MapGet/MapPost/...` invocation node.
+  Previously, endpoints with `.AllowAnonymous()` were always emitted with `security: [JwtBearer: []]`
+  in the generated YAML, and `.Produces(...)` content types were ignored (always `application/json`).
+
+### Added
+- **Source Generator**: New `ApplyFluentChainOptions` method that inspects parent
+  `InvocationExpressionSyntax` nodes for chained method calls on `IRouteEndpointBuilder`.
+- **Tests**: 5 new tests covering fluent chain detection: `AllowAnonymous`, `Produces`,
+  combined chains, mixed auth/anonymous endpoints, and reversed chain order (128 total).
+- **Test Helper**: `CreateRouteBuilderSource()` now includes `IRouteEndpointBuilder` interface with
+  `AllowAnonymous()`, `Produces(string)`, and `WithHeader(string, string)` methods, matching the
+  NativeLambdaRouter 2.x fluent API.
+
 ## [1.3.1] - 2026-02-11
 
 ### Added
