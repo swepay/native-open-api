@@ -1,0 +1,145 @@
+openapi: "3.1.0"
+info:
+  title: Identity API
+  version: "1.0.0"
+paths:
+  /v1/auth/login:
+    post:
+      summary: Authenticate a user
+      operationId: login
+      tags:
+        - Identity
+      security:
+        - JwtBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginCommand"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /v1/auth/register:
+    post:
+      summary: Register a new user
+      operationId: register
+      tags:
+        - Identity
+      security:
+        - JwtBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterCommand"
+      responses:
+        "201":
+          description: User registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /v1/auth/refresh:
+    post:
+      summary: Refresh an access token
+      operationId: refreshToken
+      tags:
+        - Identity
+      security:
+        - JwtBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshTokenCommand"
+      responses:
+        "200":
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshTokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+components:
+  schemas:
+    LoginCommand:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+          format: password
+      required:
+        - email
+        - password
+    LoginResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+          format: int64
+    RegisterCommand:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+          format: password
+        displayName:
+          type: string
+      required:
+        - email
+        - password
+        - displayName
+    RegisterResponse:
+      type: object
+      properties:
+        userId:
+          type: string
+        message:
+          type: string
+    RefreshTokenCommand:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+      required:
+        - refreshToken
+    RefreshTokenResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+          format: int64

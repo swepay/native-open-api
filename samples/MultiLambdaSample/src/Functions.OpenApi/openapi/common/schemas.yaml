@@ -1,0 +1,31 @@
+openapi: "3.1.0"
+info:
+  title: Common Schemas
+  version: "1.0.0"
+components:
+  schemas:
+    ErrorDetail:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code
+        message:
+          type: string
+          description: Human-readable error message
+      required:
+        - code
+        - message
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        totalCount:
+          type: integer
+          format: int64

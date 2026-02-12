@@ -1,0 +1,134 @@
+services:
+  # ── API Gateway Proxy ──────────────────────────────────────
+  proxy:
+    image: ghcr.io/swepay/native-aws-api-gateway-local-proxy:latest
+    container_name: multilambda-proxy
+    ports:
+      - "3000:3000"
+    environment:
+      DEBUG: "true"
+      ROUTES: |
+        {
+          "routes": [
+            {"pathPrefix": "/v1/auth", "routeTemplate": "/v1/auth/{proxy+}", "lambdaUrl": "http://lambda-identity:8080/2015-03-31/functions/function/invocations", "name": "identity"},
+            {"pathPrefix": "/v1/admin", "routeTemplate": "/v1/admin/{proxy+}", "lambdaUrl": "http://lambda-admin:8080/2015-03-31/functions/function/invocations", "name": "admin"},
+            {"pathPrefix": "/v1/openid", "routeTemplate": "/v1/openid/{proxy+}", "lambdaUrl": "http://lambda-openid:8080/2015-03-31/functions/function/invocations", "name": "openid"},
+            {"pathPrefix": "/.well-known", "routeTemplate": "/.well-known/{proxy+}", "lambdaUrl": "http://lambda-openid:8080/2015-03-31/functions/function/invocations", "name": "openid-wellknown"},
+            {"pathPrefix": "/docs", "routeTemplate": "/docs/{proxy+}", "lambdaUrl": "http://lambda-openapi:8080/2015-03-31/functions/function/invocations", "name": "openapi"}
+          ]
+        }
+    depends_on:
+      - lambda-admin
+      - lambda-identity
+      - lambda-openid
+      - lambda-openapi
+
+  # ── Lambda: Admin ──────────────────────────────────────────
+  lambda-admin:
+    build:
+      context: ../../
+      dockerfile: samples/MultiLambdaSample/src/Functions.Admin/Dockerfile
+    container_name: multilambda-admin
+
+  # ── Lambda: Identity ───────────────────────────────────────
+  lambda-identity:
+    build:
+      context: ../../
+      dockerfile: samples/MultiLambdaSample/src/Functions.Identity/Dockerfile
+    container_name: multilambda-identity
+
+  # ── Lambda: OpenId ─────────────────────────────────────────
+  lambda-openid:
+    build:
+      context: ../../
+      dockerfile: samples/MultiLambdaSample/src/Functions.OpenId/Dockerfile
+    container_name: multilambda-openid
+
+  # ── Lambda: OpenApi ────────────────────────────────────────
+  lambda-openapi:
+    build:
+      context: ../../
+      dockerfile: samples/MultiLambdaSample/src/Functions.OpenApi/Dockerfile
+    container_name: multilambda-openapi
+
+  # ── Smoke Tests ────────────────────────────────────────────
+  tests:
+    image: curlimages/curl:latest
+    container_name: multilambda-tests
+    depends_on:
+      - proxy
+    # Wait for all Lambdas to be ready, then run smoke tests
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        echo "=========================================="
+        echo "  MultiLambdaSample - Smoke Tests"
+        echo "=========================================="
+        echo ""
+        echo "Waiting 15s for Lambda RIE containers..."
+        sleep 15
+
+        PASS=0
+        FAIL=0
+        BASE="http://proxy:3000"
+
+        check() {
+          ENDPOINT="$$1"
+          EXPECTED_STATUS="$$2"
+          EXPECTED_BODY="$$3"
+          DESCRIPTION="$$4"
+
+          RESPONSE=$$(curl -s -w "\n%{http_code}" "$${BASE}$${ENDPOINT}")
+          STATUS=$$(echo "$$RESPONSE" | tail -1)
+          BODY=$$(echo "$$RESPONSE" | head -n -1)
+
+          if [ "$$STATUS" = "$$EXPECTED_STATUS" ]; then
+            if [ -n "$$EXPECTED_BODY" ]; then
+              if echo "$$BODY" | grep -q "$$EXPECTED_BODY"; then
+                echo "[PASS] $$DESCRIPTION (HTTP $$STATUS)"
+                PASS=$$((PASS + 1))
+              else
+                echo "[FAIL] $$DESCRIPTION — expected body containing '$$EXPECTED_BODY'"
+                echo "       Got: $$(echo $$BODY | head -c 200)"
+                FAIL=$$((FAIL + 1))
+              fi
+            else
+              echo "[PASS] $$DESCRIPTION (HTTP $$STATUS)"
+              PASS=$$((PASS + 1))
+            fi
+          else
+            echo "[FAIL] $$DESCRIPTION — expected HTTP $$EXPECTED_STATUS, got $$STATUS"
+            echo "       Body: $$(echo $$BODY | head -c 200)"
+            FAIL=$$((FAIL + 1))
+          fi
+        }
+
+        echo "--- Admin Lambda ---"
+        check "/v1/admin/users" "401" "Unauthorized" "GET /v1/admin/users (auth required)"
+
+        echo ""
+        echo "--- Identity Lambda ---"
+        check "/v1/auth/login" "404" "Route not found" "GET /v1/auth/login (POST-only route)"
+
+        echo ""
+        echo "--- OpenId Lambda ---"
+        check "/.well-known/openid-configuration" "200" "issuer" "GET /.well-known/openid-configuration"
+
+        echo ""
+        echo "--- OpenAPI Lambda ---"
+        check "/docs/openapi.json" "200" "openapi" "GET /docs/openapi.json"
+        check "/docs/redoc" "200" "redoc" "GET /docs/redoc"
+        check "/docs/scalar" "200" "scalar" "GET /docs/scalar"
+
+        echo ""
+        echo "--- Health Checks (via proxy) ---"
+        check "/v1/admin/health" "404" "" "GET /v1/admin/health (not registered)"
+
+        echo ""
+        echo "=========================================="
+        echo "  Results: $$PASS passed, $$FAIL failed"
+        echo "=========================================="
+
+        if [ "$$FAIL" -gt 0 ]; then
+          exit 1
+        fi

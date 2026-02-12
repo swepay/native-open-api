@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/producers/">
+    <Project Path="src/Functions.Admin/Functions.Admin.csproj" />
+    <Project Path="src/Functions.Identity/Functions.Identity.csproj" />
+    <Project Path="src/Functions.OpenId/Functions.OpenId.csproj" />
+  </Folder>
+  <Folder Name="/consumers/">
+    <Project Path="src/Functions.OpenApi/Functions.OpenApi.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,123 @@
+openapi: "3.1.0"
+info:
+  title: Admin API
+  version: "1.0.0"
+paths:
+  /v1/admin/users:
+    get:
+      summary: List all users
+      operationId: listUsers
+      tags:
+        - Admin
+      security:
+        - JwtBearer: []
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListUsersResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    post:
+      summary: Create a new user
+      operationId: createUser
+      tags:
+        - Admin
+      security:
+        - JwtBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserCommand"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateUserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /v1/admin/users/{id}:
+    delete:
+      summary: Delete a user by ID
+      operationId: deleteUser
+      tags:
+        - Admin
+      security:
+        - JwtBearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteUserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+components:
+  schemas:
+    UserDto:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+      required:
+        - id
+        - email
+        - role
+    ListUsersResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserDto"
+    CreateUserCommand:
+      type: object
+      properties:
+        email:
+          type: string
+        role:
+          type: string
+      required:
+        - email
+        - role
+    CreateUserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        message:
+          type: string
+    DeleteUserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        message:
+          type: string

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Functions.OpenApi.LocalRunner</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\src\Native.OpenApi\Native.OpenApi.csproj" />
+  </ItemGroup>
+
+  <!--
+    We reference the same embedded YAML resources from the Functions.OpenApi project.
+    Instead of duplicating, we link them as EmbeddedResource.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\Functions.OpenApi\openapi\common\schemas.yaml" Link="openapi\common\schemas.yaml" />
+    <EmbeddedResource Include="..\Functions.OpenApi\openapi\common\responses.yaml" Link="openapi\common\responses.yaml" />
+    <EmbeddedResource Include="..\Functions.OpenApi\openapi\common\security.yaml" Link="openapi\common\security.yaml" />
+    <EmbeddedResource Include="..\Functions.OpenApi\openapi\partials\admin.yaml" Link="openapi\partials\admin.yaml" />
+    <EmbeddedResource Include="..\Functions.OpenApi\openapi\partials\identity.yaml" Link="openapi\partials\identity.yaml" />
+    <EmbeddedResource Include="..\Functions.OpenApi\openapi\partials\openid.yaml" Link="openapi\partials\openid.yaml" />
+  </ItemGroup>
+
+</Project>

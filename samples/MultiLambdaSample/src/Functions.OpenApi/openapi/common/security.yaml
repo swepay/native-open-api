@@ -1,0 +1,14 @@
+openapi: "3.1.0"
+info:
+  title: Common Security
+  version: "1.0.0"
+components:
+  securitySchemes:
+    JwtBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token authentication
+
+security:
+  - JwtBearer: []
