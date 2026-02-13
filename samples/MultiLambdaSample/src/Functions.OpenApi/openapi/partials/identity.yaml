@@ -1,16 +1,16 @@
 openapi: "3.1.0"
+
 info:
-  title: Identity API
+  title: "Identity API"
   version: "1.0.0"
+
 paths:
   /v1/auth/login:
     post:
-      summary: Authenticate a user
-      operationId: login
+      operationId: postV1AuthLogin
+      summary: "Create Login"
       tags:
-        - Identity
-      security:
-        - JwtBearer: []
+        - V1
       requestBody:
         required: true
         content:
@@ -19,7 +19,7 @@ paths:
               $ref: "#/components/schemas/LoginCommand"
       responses:
         "200":
-          description: Login successful
+          description: "Successful response"
           content:
             application/json:
               schema:
@@ -30,39 +30,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
-  /v1/auth/register:
-    post:
-      summary: Register a new user
-      operationId: register
-      tags:
-        - Identity
-      security:
-        - JwtBearer: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RegisterCommand"
-      responses:
-        "201":
-          description: User registered
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RegisterResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
   /v1/auth/refresh:
     post:
-      summary: Refresh an access token
-      operationId: refreshToken
+      operationId: postV1AuthRefresh
+      summary: "Create RefreshToken"
       tags:
-        - Identity
-      security:
-        - JwtBearer: []
+        - V1
       requestBody:
         required: true
         content:
@@ -71,7 +44,7 @@ paths:
               $ref: "#/components/schemas/RefreshTokenCommand"
       responses:
         "200":
-          description: Token refreshed
+          description: "Successful response"
           content:
             application/json:
               schema:
@@ -82,64 +55,49 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
+  /v1/auth/register:
+    post:
+      operationId: postV1AuthRegister
+      summary: "Create Register"
+      tags:
+        - V1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterCommand"
+      responses:
+        "200":
+          description: "Successful response"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
 components:
   schemas:
     LoginCommand:
       type: object
-      properties:
-        email:
-          type: string
-        password:
-          type: string
-          format: password
-      required:
-        - email
-        - password
+      description: "Request type - properties to be documented"
     LoginResponse:
       type: object
-      properties:
-        accessToken:
-          type: string
-        refreshToken:
-          type: string
-        expiresIn:
-          type: integer
-          format: int64
-    RegisterCommand:
-      type: object
-      properties:
-        email:
-          type: string
-        password:
-          type: string
-          format: password
-        displayName:
-          type: string
-      required:
-        - email
-        - password
-        - displayName
-    RegisterResponse:
-      type: object
-      properties:
-        userId:
-          type: string
-        message:
-          type: string
+      description: "Response type - properties to be documented"
     RefreshTokenCommand:
       type: object
-      properties:
-        refreshToken:
-          type: string
-      required:
-        - refreshToken
+      description: "Request type - properties to be documented"
     RefreshTokenResponse:
       type: object
-      properties:
-        accessToken:
-          type: string
-        refreshToken:
-          type: string
-        expiresIn:
-          type: integer
-          format: int64
+      description: "Response type - properties to be documented"
+    RegisterCommand:
+      type: object
+      description: "Request type - properties to be documented"
+    RegisterResponse:
+      type: object
+      description: "Response type - properties to be documented"

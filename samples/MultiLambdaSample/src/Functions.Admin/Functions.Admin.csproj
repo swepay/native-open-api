@@ -16,6 +16,11 @@
     <!-- Override namespace for the generated OpenAPI spec class -->
     <OpenApiSpecName>Functions.Admin</OpenApiSpecName>
     <OpenApiSpecTitle>Admin API</OpenApiSpecTitle>
+
+    <!-- Save source-generated .g.cs to disk so the ExportOpenApiPartialSpec target can extract YAML -->
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <!-- Name of the partial YAML file exported to Functions.OpenApi/openapi/partials/ -->
+    <OpenApiPartialName>admin</OpenApiPartialName>
   </PropertyGroup>
 
   <ItemGroup>

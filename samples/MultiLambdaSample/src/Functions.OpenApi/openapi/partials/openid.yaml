@@ -1,50 +1,54 @@
 openapi: "3.1.0"
+
 info:
-  title: OpenID Connect API
+  title: "OpenID Connect API"
   version: "1.0.0"
+
 paths:
-  /v1/openid/discovery:
+  /.well-known/jwks.json:
     get:
-      summary: OpenID Connect Discovery
-      operationId: getOpenIdConfiguration
+      operationId: get.well-knownJwks.json
+      summary: "Get Jwks"
       tags:
-        - OpenID
-      security:
-        - JwtBearer: []
+        - .well-known
       responses:
         "200":
-          description: OpenID Configuration
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/OpenIdConfigurationResponse"
-        "500":
-          $ref: "#/components/responses/InternalServerError"
-  /v1/openid/jwks:
-    get:
-      summary: JSON Web Key Set
-      operationId: getJwks
-      tags:
-        - OpenID
-      security:
-        - JwtBearer: []
-      responses:
-        "200":
-          description: JWKS response
+          description: "Successful response"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/JwksResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /.well-known/openid-configuration:
+    get:
+      operationId: get.well-knownOpenid-configuration
+      summary: "Get OpenIdConfiguration"
+      tags:
+        - .well-known
+      responses:
+        "200":
+          description: "Successful response"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenIdConfigurationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
   /v1/openid/token:
     post:
-      summary: Exchange authorization code for tokens
-      operationId: exchangeToken
+      operationId: postV1OpenidToken
+      summary: "Create Token"
       tags:
-        - OpenID
-      security:
-        - JwtBearer: []
+        - V1
       requestBody:
         required: true
         content:
@@ -53,82 +57,35 @@ paths:
               $ref: "#/components/schemas/TokenCommand"
       responses:
         "200":
-          description: Token response
+          description: "Successful response"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
+
 components:
   schemas:
-    OpenIdConfigurationResponse:
+    JwksCommand:
       type: object
-      properties:
-        issuer:
-          type: string
-        authorization_endpoint:
-          type: string
-        token_endpoint:
-          type: string
-        jwks_uri:
-          type: string
-        response_types_supported:
-          type: array
-          items:
-            type: string
-        subject_types_supported:
-          type: array
-          items:
-            type: string
-        id_token_signing_alg_values_supported:
-          type: array
-          items:
-            type: string
+      description: "Request type - properties to be documented"
     JwksResponse:
       type: object
-      properties:
-        keys:
-          type: array
-          items:
-            $ref: "#/components/schemas/JwkKey"
-    JwkKey:
+      description: "Response type - properties to be documented"
+    OpenIdConfigurationCommand:
       type: object
-      properties:
-        kty:
-          type: string
-        use:
-          type: string
-        kid:
-          type: string
-        "n":
-          type: string
-        e:
-          type: string
+      description: "Request type - properties to be documented"
+    OpenIdConfigurationResponse:
+      type: object
+      description: "Response type - properties to be documented"
     TokenCommand:
       type: object
-      properties:
-        grant_type:
-          type: string
-        code:
-          type: string
-        redirect_uri:
-          type: string
-      required:
-        - grant_type
-        - code
-        - redirect_uri
+      description: "Request type - properties to be documented"
     TokenResponse:
       type: object
-      properties:
-        access_token:
-          type: string
-        token_type:
-          type: string
-        expires_in:
-          type: integer
-          format: int64
-        id_token:
-          type: string
+      description: "Response type - properties to be documented"

@@ -32,15 +32,17 @@
     The 3 producer Lambdas all have AssemblyName=bootstrap, which causes
     "Ambiguous project name 'bootstrap'" when used as ProjectReference.
     
-    Solution: Each producer builds independently and its Source Generator
-    produces a YAML file. In CI/CD, a build step copies the generated YAML
-    from each producer into this project's openapi/partials/ folder.
+    Solution: Each producer project defines OpenApiPartialName in its .csproj.
+    The Directory.Build.targets ExtractOpenApiYaml inline task runs after each
+    producer build and extracts the YAML from the Source Generator output into
+    this project's openapi/partials/ directory automatically.
     
-    For local development, run: dotnet build ../Functions.Admin && dotnet build ../Functions.Identity && dotnet build ../Functions.OpenId
-    Then use the build-specs.ps1 script to extract the YAML constants.
+    Build order:  dotnet build src/Functions.Admin
+                  dotnet build src/Functions.Identity
+                  dotnet build src/Functions.OpenId
+                  dotnet build src/Functions.OpenApi
     
-    Alternatively, the generated YAML is committed to source control as
-    openapi/partials/*.yaml files (see the checked-in samples).
+    See Directory.Build.targets and Directory.Build.props in the solution root.
   -->
 
   <!-- Common OpenAPI YAML resources -->

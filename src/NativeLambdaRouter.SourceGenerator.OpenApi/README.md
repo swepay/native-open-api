@@ -199,15 +199,15 @@ Each Function project only needs:
 
 ```xml
 <!-- Functions.Admin.csproj, Functions.Identity.csproj, Functions.OpenId.csproj -->
-<PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi" Version="1.3.1" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-<PackageReference Include="NativeOpenApi" Version="1.3.0" />
+<PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi" Version="1.3.3" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+<PackageReference Include="NativeOpenApi" Version="1.3.3" />
 ```
 
 And the consolidator project:
 
 ```xml
 <!-- Functions.OpenApi.csproj -->
-<PackageReference Include="NativeOpenApi" Version="1.3.0" />
+<PackageReference Include="NativeOpenApi" Version="1.3.3" />
 <ProjectReference Include="..\Functions.Admin\Functions.Admin.csproj" />
 <ProjectReference Include="..\Functions.Identity\Functions.Identity.csproj" />
 <ProjectReference Include="..\Functions.OpenId\Functions.OpenId.csproj" />
@@ -270,6 +270,33 @@ public sealed class GeneratedOpenApiSpec : Native.OpenApi.IGeneratedOpenApiSpec
 ```
 
 Each produces a unique namespace even though all assemblies are named `bootstrap`.
+
+### Using `ProjectReference` Instead of NuGet
+
+When developing locally or contributing to this repository, you may reference the Source Generator via `ProjectReference` instead of `PackageReference`:
+
+```xml
+<ProjectReference Include="path\to\NativeLambdaRouter.SourceGenerator.OpenApi.csproj"
+                  OutputItemType="Analyzer"
+                  ReferenceOutputAssembly="false" />
+```
+
+> **Important:** The `.props` file that exposes `OpenApiSpecName` and `OpenApiSpecTitle` to the Roslyn analyzer is only auto-imported for NuGet packages. When using `ProjectReference`, you must manually declare `CompilerVisibleProperty` in your project or a `Directory.Build.props`:
+
+```xml
+<Project>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="OpenApiSpecName" />
+    <CompilerVisibleProperty Include="OpenApiSpecTitle" />
+  </ItemGroup>
+</Project>
+```
+
+Without this, the Source Generator cannot read MSBuild properties and will fall back to `AssemblyName` for namespace and title.
+
+### Automated YAML Extraction (Multi-Lambda)
+
+For multi-Lambda architectures where producers cannot be referenced by the consumer (due to `AssemblyName=bootstrap` ambiguity), you can use an MSBuild inline task to automatically extract the generated YAML on every build. See the [MultiLambdaSample](../../samples/MultiLambdaSample/) for a complete working example with `Directory.Build.targets`.
 
 ## Requirements
 

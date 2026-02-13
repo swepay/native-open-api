@@ -1,0 +1,71 @@
+<Project>
+
+  <!--
+    ExtractOpenApiYaml: Inline MSBuild task that reads a GeneratedOpenApiSpec.g.cs file
+    and extracts the YAML content embedded in the YamlContent const string.
+
+    Used by producer projects (Admin, Identity, OpenId) to export their generated
+    OpenAPI partial specs to the OpenApi consumer project's openapi/partials/ directory.
+  -->
+  <UsingTask TaskName="ExtractOpenApiYaml"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <SourceFile ParameterType="System.String" Required="true" />
+      <OutputFile ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        if (!File.Exists(SourceFile))
+        {
+            Log.LogMessage(MessageImportance.Normal,
+                "OpenAPI spec file not found: {0} — skipping extraction.", SourceFile);
+            return true;
+        }
+
+        var content = File.ReadAllText(SourceFile);
+        var match = Regex.Match(content, @"YamlContent\s*=\s*@""([\s\S]*?)"";");
+
+        if (!match.Success)
+        {
+            Log.LogWarning("Could not extract YamlContent from: {0}", SourceFile);
+            return true;
+        }
+
+        var yaml = match.Groups[1].Value
+            .Replace("\"\"", "\"")
+            .TrimStart('\r', '\n');
+
+        var dir = Path.GetDirectoryName(OutputFile);
+        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
+
+        File.WriteAllText(OutputFile, yaml, new System.Text.UTF8Encoding(false));
+
+        Log.LogMessage(MessageImportance.High,
+            "Extracted OpenAPI YAML → {0}", OutputFile);
+
+        return true;
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <!--
+    Target: ExportOpenApiPartialSpec
+    Runs after Build on projects that define OpenApiPartialName.
+    Extracts the YAML from the source-generated .g.cs and writes it to
+    the OpenApi consumer project's openapi/partials/ directory.
+  -->
+  <Target Name="ExportOpenApiPartialSpec"
+          AfterTargets="Build"
+          Condition="'$(OpenApiPartialName)' != ''">
+    <PropertyGroup>
+      <_GenSpecPath>$(IntermediateOutputPath)generated\NativeLambdaRouter.SourceGenerator.OpenApi\NativeLambdaRouter.SourceGenerator.OpenApi.OpenApiSourceGenerator\GeneratedOpenApiSpec.g.cs</_GenSpecPath>
+      <_PartialYamlPath>$(MSBuildThisFileDirectory)src\Functions.OpenApi\openapi\partials\$(OpenApiPartialName).yaml</_PartialYamlPath>
+    </PropertyGroup>
+    <ExtractOpenApiYaml SourceFile="$(_GenSpecPath)" OutputFile="$(_PartialYamlPath)" />
+  </Target>
+
+</Project>

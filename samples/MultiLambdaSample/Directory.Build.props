@@ -1,0 +1,14 @@
+<Project>
+
+  <!--
+    When the Source Generator is referenced via ProjectReference (not NuGet PackageReference),
+    the build/*.props shipped inside the package is NOT auto-imported.
+    We must manually declare CompilerVisibleProperty so that MSBuild properties
+    like OpenApiSpecName and OpenApiSpecTitle are forwarded to the Roslyn analyzer.
+  -->
+  <ItemGroup>
+    <CompilerVisibleProperty Include="OpenApiSpecName" />
+    <CompilerVisibleProperty Include="OpenApiSpecTitle" />
+  </ItemGroup>
+
+</Project>

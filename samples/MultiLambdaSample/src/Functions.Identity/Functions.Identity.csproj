@@ -16,6 +16,11 @@
     <!-- Override namespace for the generated OpenAPI spec class -->
     <OpenApiSpecName>Functions.Identity</OpenApiSpecName>
     <OpenApiSpecTitle>Identity API</OpenApiSpecTitle>
+
+    <!-- Save source-generated .g.cs to disk so the ExportOpenApiPartialSpec target can extract YAML -->
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <!-- Name of the partial YAML file exported to Functions.OpenApi/openapi/partials/ -->
+    <OpenApiPartialName>identity</OpenApiPartialName>
   </PropertyGroup>
 
   <ItemGroup>

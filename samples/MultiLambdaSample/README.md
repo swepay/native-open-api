@@ -57,15 +57,81 @@ error: Ambiguous project name 'bootstrap'
 
 **Solution:** The consumer project (`Functions.OpenApi`) does **not** reference the producer projects directly. Instead, it embeds the YAML partial specs as resources:
 
-1. Each producer project builds independently and generates its OpenAPI YAML
-2. The generated YAML is committed to `Functions.OpenApi/openapi/partials/`
+1. Each producer project builds and the Source Generator creates an in-memory OpenAPI YAML
+2. `Directory.Build.targets` extracts the YAML from the generated `.g.cs` and writes it to `Functions.OpenApi/openapi/partials/`
 3. The consumer loads them as embedded resources via `OpenApiDocumentLoaderBase.Load()`
+
+## Automated YAML Extraction
+
+The solution uses a `Directory.Build.targets` with an inline MSBuild task (`ExtractOpenApiYaml`) to automatically extract the generated OpenAPI YAML from each producer project on every build. No manual copy is needed.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Producer Build (e.g. Functions.Admin)                                   │
+│                                                                          │
+│  1. Roslyn compiles the project                                          │
+│  2. Source Generator produces GeneratedOpenApiSpec.g.cs (in-memory)      │
+│  3. EmitCompilerGeneratedFiles=true writes the .g.cs to disk             │
+│  4. ExportOpenApiPartialSpec target runs after build:                     │
+│     - Reads obj/.../GeneratedOpenApiSpec.g.cs                            │
+│     - Extracts YamlContent const via regex                               │
+│     - Writes to Functions.OpenApi/openapi/partials/{name}.yaml           │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Required Files
+
+#### `Directory.Build.props`
+
+Exposes `OpenApiSpecName` and `OpenApiSpecTitle` MSBuild properties to the Roslyn analyzer. This is required when the Source Generator is referenced via `ProjectReference` instead of NuGet `PackageReference` (the NuGet package ships a `.props` that handles this automatically).
+
+```xml
+<Project>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="OpenApiSpecName" />
+    <CompilerVisibleProperty Include="OpenApiSpecTitle" />
+  </ItemGroup>
+</Project>
+```
+
+#### `Directory.Build.targets`
+
+Defines the `ExtractOpenApiYaml` inline task and the `ExportOpenApiPartialSpec` target that runs after each producer build.
+
+#### Producer `.csproj` Properties
+
+Each producer project needs these properties:
+
+```xml
+<PropertyGroup>
+  <!-- Customize namespace and title for the generated spec -->
+  <OpenApiSpecName>Functions.Admin</OpenApiSpecName>
+  <OpenApiSpecTitle>Admin API</OpenApiSpecTitle>
+
+  <!-- Save source-generated .g.cs to disk for extraction -->
+  <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+
+  <!-- Name of the partial YAML exported to Functions.OpenApi/openapi/partials/ -->
+  <OpenApiPartialName>admin</OpenApiPartialName>
+</PropertyGroup>
+```
+
+| Property | Required | Description |
+|----------|----------|-------------|
+| `OpenApiSpecName` | Yes | Namespace override for the generated class |
+| `OpenApiSpecTitle` | Yes | API title in the generated YAML `info.title` |
+| `EmitCompilerGeneratedFiles` | Yes | Writes `.g.cs` to disk for extraction |
+| `OpenApiPartialName` | Yes | Output filename (without `.yaml`) in `openapi/partials/` |
 
 ## Project Structure
 
 ```
 MultiLambdaSample/
 ├── MultiLambdaSample.slnx
+├── Directory.Build.props           # CompilerVisibleProperty for ProjectReference
+├── Directory.Build.targets         # ExtractOpenApiYaml task + ExportOpenApiPartialSpec target
 ├── README.md
 └── src/
     ├── Functions.Admin/            # Producer: Admin endpoints
@@ -111,15 +177,17 @@ MultiLambdaSample/
 ## Building
 
 ```bash
-# Build all projects
-dotnet build
-
-# Build a specific producer
+# Build all producers first, then the consumer.
+# Each producer automatically extracts its YAML to Functions.OpenApi/openapi/partials/
 dotnet build src/Functions.Admin/Functions.Admin.csproj
+dotnet build src/Functions.Identity/Functions.Identity.csproj
+dotnet build src/Functions.OpenId/Functions.OpenId.csproj
 
-# Build the consumer
+# Build the consumer (uses the extracted YAML partials)
 dotnet build src/Functions.OpenApi/Functions.OpenApi.csproj
 ```
+
+> **Note:** You cannot `dotnet build` the entire solution at once because all projects share `AssemblyName=bootstrap`, which causes NuGet restore ambiguity. Build each project individually in order.
 
 ## Key MSBuild Properties
 
@@ -129,6 +197,8 @@ dotnet build src/Functions.OpenApi/Functions.OpenApi.csproj
 | `OpenApiSpecTitle` | Sets the title in the generated OpenAPI YAML | `Admin API` |
 | `AssemblyName` | Must be `bootstrap` for AWS Lambda custom runtime | `bootstrap` |
 | `RootNamespace` | Keeps the original namespace for C# code | `Functions.Admin` |
+| `EmitCompilerGeneratedFiles` | Writes `.g.cs` to disk for YAML extraction | `true` |
+| `OpenApiPartialName` | Output filename in `openapi/partials/` | `admin` |
 
 ## How the Consumer Works
 

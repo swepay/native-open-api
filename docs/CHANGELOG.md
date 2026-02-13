@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.3] - 2026-02-11
+
+### Added
+- **MultiLambdaSample**: Automated YAML extraction via `Directory.Build.targets` with inline
+  MSBuild task (`ExtractOpenApiYaml`). Producer projects now automatically export their generated
+  OpenAPI partial specs to the consumer project's `openapi/partials/` directory on every build.
+  No manual YAML copy is required.
+- **MultiLambdaSample**: `Directory.Build.props` that declares `CompilerVisibleProperty` for
+  `OpenApiSpecName` and `OpenApiSpecTitle`, enabling MSBuild→Roslyn property bridging when the
+  Source Generator is referenced via `ProjectReference` instead of NuGet `PackageReference`.
+- **MultiLambdaSample**: New MSBuild properties per producer `.csproj`:
+  - `EmitCompilerGeneratedFiles=true` — persists `.g.cs` to disk for extraction
+  - `OpenApiPartialName` — controls the output filename in `openapi/partials/`
+
+### Changed
+- **MultiLambdaSample**: Updated `Functions.OpenApi.csproj` comments to document the automated
+  extraction approach (replaces manual copy / build-specs.ps1 instructions).
+- **Documentation**: Updated `MultiLambdaSample/README.md` with full documentation of the automated
+  YAML extraction workflow, required files, and MSBuild properties.
+
 ## [1.3.2] - 2026-02-11
 
 ### Fixed

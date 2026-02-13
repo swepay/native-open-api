@@ -1,32 +1,36 @@
 openapi: "3.1.0"
+
 info:
-  title: Admin API
+  title: "Admin API"
   version: "1.0.0"
+
 paths:
   /v1/admin/users:
     get:
-      summary: List all users
-      operationId: listUsers
+      operationId: getV1AdminUsers
+      summary: "Get ListUsers"
       tags:
-        - Admin
+        - V1
       security:
         - JwtBearer: []
       responses:
         "200":
-          description: Successful response
+          description: "Successful response"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ListUsersResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
     post:
-      summary: Create a new user
-      operationId: createUser
+      operationId: postV1AdminUsers
+      summary: "Create CreateUser"
       tags:
-        - Admin
+        - V1
       security:
         - JwtBearer: []
       requestBody:
@@ -36,8 +40,8 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateUserCommand"
       responses:
-        "201":
-          description: User created
+        "200":
+          description: "Successful response"
           content:
             application/json:
               schema:
@@ -50,10 +54,10 @@ paths:
           $ref: "#/components/responses/InternalServerError"
   /v1/admin/users/{id}:
     delete:
-      summary: Delete a user by ID
-      operationId: deleteUser
+      operationId: deleteV1AdminUsersById
+      summary: "Delete DeleteUser"
       tags:
-        - Admin
+        - V1
       security:
         - JwtBearer: []
       parameters:
@@ -64,60 +68,35 @@ paths:
             type: string
       responses:
         "200":
-          description: User deleted
+          description: "Successful response"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeleteUserResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalServerError"
+
 components:
   schemas:
-    UserDto:
-      type: object
-      properties:
-        id:
-          type: string
-        email:
-          type: string
-        role:
-          type: string
-      required:
-        - id
-        - email
-        - role
-    ListUsersResponse:
-      type: object
-      properties:
-        users:
-          type: array
-          items:
-            $ref: "#/components/schemas/UserDto"
     CreateUserCommand:
       type: object
-      properties:
-        email:
-          type: string
-        role:
-          type: string
-      required:
-        - email
-        - role
+      description: "Request type - properties to be documented"
     CreateUserResponse:
       type: object
-      properties:
-        id:
-          type: string
-        message:
-          type: string
+      description: "Response type - properties to be documented"
+    DeleteUserCommand:
+      type: object
+      description: "Request type - properties to be documented"
     DeleteUserResponse:
       type: object
-      properties:
-        id:
-          type: string
-        message:
-          type: string
+      description: "Response type - properties to be documented"
+    ListUsersCommand:
+      type: object
+      description: "Request type - properties to be documented"
+    ListUsersResponse:
+      type: object
+      description: "Response type - properties to be documented"
