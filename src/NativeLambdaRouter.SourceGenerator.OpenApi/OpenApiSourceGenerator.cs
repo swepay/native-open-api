@@ -193,6 +193,9 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
             LineNumber = lineSpan.StartLinePosition.Line + 1
         };
 
+        // Extract type properties for schema generation
+        ExtractTypeProperties(commandType, responseType, endpoint);
+
         // Detect fluent chain options (.AllowAnonymous(), .Produces(...), etc.)
         ApplyFluentChainOptions(invocation, endpoint);
 
@@ -204,6 +207,26 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         return typeName.Contains("IRouteBuilder")
             || typeName.Contains("RouteBuilder")
             || typeName.Contains("NativeLambdaRouter");
+    }
+
+    /// <summary>
+    /// Extracts properties from command and response type symbols for schema generation.
+    /// </summary>
+    private static void ExtractTypeProperties(ITypeSymbol commandType, ITypeSymbol responseType, EndpointInfo endpoint)
+    {
+        var commandProps = TypePropertyExtractor.Extract(commandType);
+        if (commandProps.Count > 0)
+        {
+            endpoint.CommandProperties = commandProps;
+            endpoint.CommandPropertiesResolved = true;
+        }
+
+        var responseProps = TypePropertyExtractor.Extract(responseType);
+        if (responseProps.Count > 0)
+        {
+            endpoint.ResponseProperties = responseProps;
+            endpoint.ResponsePropertiesResolved = true;
+        }
     }
 
     /// <summary>
@@ -525,6 +548,12 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
             SourceFile = lineSpan.Path,
             LineNumber = lineSpan.StartLinePosition.Line + 1
         };
+
+        // Extract type properties when symbols are available
+        if (commandTypeInfo.Type != null && responseTypeInfo.Type != null)
+        {
+            ExtractTypeProperties(commandTypeInfo.Type, responseTypeInfo.Type, endpoint);
+        }
 
         // Detect fluent chain options (.AllowAnonymous(), .Produces(...), etc.)
         ApplyFluentChainOptions(invocation, endpoint);

@@ -1,5 +1,6 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Text;
-using Microsoft.CodeAnalysis;
 
 namespace NativeLambdaRouter.SourceGenerator.OpenApi;
 
@@ -105,33 +106,154 @@ internal static class OpenApiYamlGenerator
         sb.AppendLine("components:");
         sb.AppendLine("  schemas:");
 
-        // Generate schema placeholders for request/response types
-        var allTypes = endpoints
-            .SelectMany(e => new[] { new TypeInfo(e.CommandSimpleName, "Request"), new TypeInfo(e.ResponseSimpleName, "Response") })
-            .GroupBy(t => t.TypeName)
-            .Select(g => g.First())
-            .OrderBy(t => t.TypeName);
+        // Build schema type info with resolved properties
+        var allSchemas = BuildSchemaTypes(endpoints);
 
-        foreach (var typeInfo in allTypes)
+        foreach (var schema in allSchemas)
         {
-            sb.AppendLine($"    {typeInfo.TypeName}:");
+            sb.AppendLine($"    {schema.TypeName}:");
             sb.AppendLine("      type: object");
-            sb.AppendLine($"      description: \"{typeInfo.TypeKind} type - properties to be documented\"");
+
+            if (schema.IsResolved && schema.Properties.Count > 0)
+            {
+                AppendSchemaProperties(sb, schema);
+            }
+            else
+            {
+                sb.AppendLine($"      description: \"{schema.TypeKind} type - properties to be documented\"");
+            }
         }
 
         return sb.ToString();
     }
 
-    private sealed class TypeInfo
+    /// <summary>
+    /// Builds deduplicated and sorted schema types from all endpoints.
+    /// When the same type appears in multiple endpoints, the version with resolved properties wins.
+    /// </summary>
+    private static List<SchemaTypeInfo> BuildSchemaTypes(IReadOnlyList<EndpointInfo> endpoints)
     {
-        public string TypeName { get; }
-        public string TypeKind { get; }
+        var schemaMap = new Dictionary<string, SchemaTypeInfo>();
 
-        public TypeInfo(string typeName, string typeKind)
+        foreach (var endpoint in endpoints)
         {
-            TypeName = typeName;
-            TypeKind = typeKind;
+            // Command schema
+            MergeSchema(schemaMap, endpoint.CommandSimpleName, "Request",
+                endpoint.CommandProperties, endpoint.CommandPropertiesResolved);
+
+            // Response schema
+            MergeSchema(schemaMap, endpoint.ResponseSimpleName, "Response",
+                endpoint.ResponseProperties, endpoint.ResponsePropertiesResolved);
         }
+
+        return schemaMap.Values.OrderBy(s => s.TypeName).ToList();
+    }
+
+    private static void MergeSchema(
+        Dictionary<string, SchemaTypeInfo> map,
+        string typeName,
+        string typeKind,
+        List<SchemaPropertyInfo> properties,
+        bool isResolved)
+    {
+        if (map.TryGetValue(typeName, out var existing))
+        {
+            // Prefer resolved over unresolved
+            if (!existing.IsResolved && isResolved)
+            {
+                existing.Properties = properties;
+                existing.IsResolved = isResolved;
+            }
+        }
+        else
+        {
+            map[typeName] = new SchemaTypeInfo
+            {
+                TypeName = typeName,
+                TypeKind = typeKind,
+                Properties = properties,
+                IsResolved = isResolved
+            };
+        }
+    }
+
+    /// <summary>
+    /// Appends OpenAPI YAML property definitions for a resolved schema type.
+    /// </summary>
+    private static void AppendSchemaProperties(StringBuilder sb, SchemaTypeInfo schema)
+    {
+        sb.AppendLine("      properties:");
+
+        foreach (var prop in schema.Properties)
+        {
+            sb.AppendLine($"        {prop.JsonName}:");
+
+            if (prop.RefSchemaName != null)
+            {
+                // Complex type → $ref
+                sb.AppendLine($"          $ref: \"#/components/schemas/{prop.RefSchemaName}\"");
+                continue;
+            }
+
+            if (prop.IsEnum)
+            {
+                sb.AppendLine("          type: string");
+                if (prop.EnumValues.Count > 0)
+                {
+                    sb.AppendLine("          enum:");
+                    foreach (var val in prop.EnumValues)
+                    {
+                        sb.AppendLine($"            - {val}");
+                    }
+                }
+                continue;
+            }
+
+            if (prop.OpenApiType == "array")
+            {
+                sb.AppendLine("          type: array");
+                sb.AppendLine("          items:");
+                if (prop.ArrayItemRefSchemaName != null)
+                {
+                    sb.AppendLine($"            $ref: \"#/components/schemas/{prop.ArrayItemRefSchemaName}\"");
+                }
+                else
+                {
+                    sb.AppendLine($"            type: {prop.ArrayItemType ?? "string"}");
+                    if (prop.ArrayItemFormat != null)
+                    {
+                        sb.AppendLine($"            format: {prop.ArrayItemFormat}");
+                    }
+                }
+                continue;
+            }
+
+            sb.AppendLine($"          type: {prop.OpenApiType}");
+            if (prop.OpenApiFormat != null)
+            {
+                sb.AppendLine($"          format: {prop.OpenApiFormat}");
+            }
+            if (prop.Description != null)
+            {
+                sb.AppendLine($"          description: \"{EscapeYamlString(prop.Description)}\"");
+            }
+        }
+
+        // Required fields
+        var requiredProps = schema.Properties.Where(p => p.IsRequired).ToList();
+        if (requiredProps.Count > 0)
+        {
+            sb.AppendLine("      required:");
+            foreach (var prop in requiredProps)
+            {
+                sb.AppendLine($"        - {prop.JsonName}");
+            }
+        }
+    }
+
+    private static string EscapeYamlString(string value)
+    {
+        return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
     }
 
     private static string GenerateOperationId(EndpointInfo endpoint)

@@ -46,6 +46,26 @@ internal sealed class EndpointInfo
     public string? ProducesContentType { get; set; }
 
     /// <summary>
+    /// The resolved properties for the Command type.
+    /// </summary>
+    public List<SchemaPropertyInfo> CommandProperties { get; set; } = new();
+
+    /// <summary>
+    /// The resolved properties for the Response type.
+    /// </summary>
+    public List<SchemaPropertyInfo> ResponseProperties { get; set; } = new();
+
+    /// <summary>
+    /// Whether the Command type properties were resolved from the semantic model.
+    /// </summary>
+    public bool CommandPropertiesResolved { get; set; }
+
+    /// <summary>
+    /// Whether the Response type properties were resolved from the semantic model.
+    /// </summary>
+    public bool ResponsePropertiesResolved { get; set; }
+
+    /// <summary>
     /// The source file where this endpoint was defined.
     /// </summary>
     public string? SourceFile { get; set; }

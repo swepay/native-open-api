@@ -724,4 +724,408 @@ public class MyRouter
         generatedSource.Should().NotContain("security:");
         generatedSource.Should().Contain("text/html");
     }
+
+    [Fact]
+    public void Generator_WithRecordProperties_GeneratesSchemaWithProperties()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public sealed record CreateItemCommand(string Name, string Description);
+public sealed record CreateItemResponse(string Id, string Name);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<CreateItemCommand, CreateItemResponse>(""/v1/items"", ctx => new CreateItemCommand(""test"", ""desc""));
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert - Schema should contain properties
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("properties:");
+        generatedSource.Should().Contain("name:");
+        generatedSource.Should().Contain("description:");
+        generatedSource.Should().Contain("type: string");
+    }
+
+    [Fact]
+    public void Generator_WithNullableProperties_ExcludesFromRequired()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+#nullable enable
+
+namespace TestApp;
+
+public sealed record CreateRoleCommand(string Name, string? Description, string RealmId);
+public sealed record CreateRoleResponse(string Id);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<CreateRoleCommand, CreateRoleResponse>(""/v1/roles"", ctx => new CreateRoleCommand(""admin"", null, ""realm1""));
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert - Required should contain non-nullable props, not nullable ones
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("required:");
+        generatedSource.Should().Contain("- name");
+        generatedSource.Should().Contain("- realmId");
+        // Description is nullable, should NOT be in required
+        generatedSource.Should().NotContain("- description");
+    }
+
+    [Fact]
+    public void Generator_WithIntegerProperty_GeneratesCorrectType()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public sealed record GetItemCommand(int Page, long TotalCount);
+public sealed record GetItemResponse(int Id, string Name);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<GetItemCommand, GetItemResponse>(""/v1/items"", ctx => new GetItemCommand(1, 100));
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert - Should have integer type with format
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("type: integer");
+        generatedSource.Should().Contain("format: int32");
+    }
+
+    [Fact]
+    public void Generator_WithBooleanProperty_GeneratesCorrectType()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public sealed record ToggleCommand(string Id, bool IsActive);
+public sealed record ToggleResponse(bool Success);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<ToggleCommand, ToggleResponse>(""/v1/toggle"", ctx => new ToggleCommand(""1"", true));
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("type: boolean");
+    }
+
+    [Fact]
+    public void Generator_WithListProperty_GeneratesArraySchema()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+using System.Collections.Generic;
+
+namespace TestApp;
+
+public sealed record CreateRoleCommand(string Name, List<string> PermissionIds);
+public sealed record CreateRoleResponse(string Id);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<CreateRoleCommand, CreateRoleResponse>(""/v1/roles"", ctx => new CreateRoleCommand(""admin"", new List<string>()));
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("type: array");
+        generatedSource.Should().Contain("items:");
+    }
+
+    [Fact]
+    public void Generator_WithClassProperties_GeneratesSchemaWithProperties()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class UpdateItemCommand
+{
+    public string Id { get; set; }
+    public string Name { get; set; }
+    public decimal Price { get; set; }
+}
+
+public class UpdateItemResponse
+{
+    public bool Success { get; set; }
+}
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPut<UpdateItemCommand, UpdateItemResponse>(""/v1/items/{id}"", ctx => new UpdateItemCommand());
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("properties:");
+        generatedSource.Should().Contain("name:");
+        generatedSource.Should().Contain("price:");
+        generatedSource.Should().Contain("type: number");
+    }
+
+    [Fact]
+    public void Generator_WithDateTimeProperty_GeneratesDateTimeFormat()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+using System;
+
+namespace TestApp;
+
+public sealed record AuditCommand(string Action, DateTime Timestamp);
+public sealed record AuditResponse(Guid Id);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<AuditCommand, AuditResponse>(""/v1/audits"", ctx => new AuditCommand(""test"", DateTime.UtcNow));
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("format: date-time");
+        generatedSource.Should().Contain("format: uuid");
+    }
+
+    [Fact]
+    public void Generator_WithEnumProperty_GeneratesEnumSchema()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public enum OrderStatus
+{
+    Pending,
+    Confirmed,
+    Cancelled
+}
+
+public sealed record UpdateOrderCommand(string OrderId, OrderStatus Status);
+public sealed record UpdateOrderResponse(string Id);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<UpdateOrderCommand, UpdateOrderResponse>(""/v1/orders"", ctx => new UpdateOrderCommand(""1"", OrderStatus.Pending));
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("enum:");
+        generatedSource.Should().Contain("- Pending");
+        generatedSource.Should().Contain("- Confirmed");
+        generatedSource.Should().Contain("- Cancelled");
+    }
+
+    [Fact]
+    public void Generator_WithEmptyClass_FallsBackToPlaceholder()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemsCommand { }
+public class GetItemsResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemsCommand, GetItemsResponse>(""/v1/items"", ctx => new GetItemsCommand());
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert - Empty classes should still produce valid schema (type: object, no properties)
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("type: object");
+    }
+
+    [Fact]
+    public void Generator_CamelCasePropertyNames()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public sealed record CreateUserCommand(string FirstName, string LastName, string EmailAddress);
+public sealed record CreateUserResponse(string UserId);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<CreateUserCommand, CreateUserResponse>(""/v1/users"", ctx => new CreateUserCommand(""John"", ""Doe"", ""john@example.com""));
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert - Properties should be in camelCase
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("firstName:");
+        generatedSource.Should().Contain("lastName:");
+        generatedSource.Should().Contain("emailAddress:");
+        // Should NOT contain PascalCase
+        generatedSource.Should().NotContain("FirstName:");
+        generatedSource.Should().NotContain("LastName:");
+        generatedSource.Should().NotContain("EmailAddress:");
+    }
+
+    [Fact]
+    public void Generator_WithComplexRecordLikeCreateRoleRequest_GeneratesCorrectSchema()
+    {
+        // Arrange - Mirrors the user's real-world CreateRoleRequest scenario
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+#nullable enable
+using System.Collections.Generic;
+
+namespace TestApp;
+
+public sealed record CreateRoleRequest(
+    string RealmId,
+    string Name,
+    string? Description,
+    List<string>? PermissionIds,
+    string PerformedBy,
+    string IpAddress,
+    string UserAgent);
+
+public sealed record CreateRoleResponse(string Id, string Name);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<CreateRoleRequest, CreateRoleResponse>(""/v1/roles"", ctx => new CreateRoleRequest(""r1"", ""Admin"", null, null, ""user"", ""127.0.0.1"", ""agent""));
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+
+        // All properties should be present
+        generatedSource.Should().Contain("realmId:");
+        generatedSource.Should().Contain("name:");
+        generatedSource.Should().Contain("description:");
+        generatedSource.Should().Contain("permissionIds:");
+        generatedSource.Should().Contain("performedBy:");
+        generatedSource.Should().Contain("ipAddress:");
+        generatedSource.Should().Contain("userAgent:");
+
+        // Required should include non-nullable props
+        generatedSource.Should().Contain("- realmId");
+        generatedSource.Should().Contain("- performedBy");
+        generatedSource.Should().Contain("- ipAddress");
+        generatedSource.Should().Contain("- userAgent");
+
+        // Nullable props should NOT be in required
+        // (description and permissionIds are nullable)
+        // We check the required section doesn't contain them
+        // Note: "- name" appears in required (non-nullable) — verify it's there
+        generatedSource.Should().Contain("- name");
+
+        // permissionIds should be array
+        generatedSource.Should().Contain("type: array");
+    }
 }

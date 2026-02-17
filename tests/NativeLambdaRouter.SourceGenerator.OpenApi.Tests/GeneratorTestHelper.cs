@@ -38,6 +38,7 @@ internal static class GeneratorTestHelper
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(Console).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(Enumerable).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(List<>).Assembly.Location),
         };
 
         // Add System.Runtime
@@ -46,6 +47,14 @@ internal static class GeneratorTestHelper
         if (runtimeAssembly != null)
         {
             references.Add(MetadataReference.CreateFromFile(runtimeAssembly.Location));
+        }
+
+        // Add System.Collections for List<T>, Dictionary<T,V>, etc.
+        var collectionsAssembly = AppDomain.CurrentDomain.GetAssemblies()
+            .FirstOrDefault(a => a.GetName().Name == "System.Collections");
+        if (collectionsAssembly != null)
+        {
+            references.Add(MetadataReference.CreateFromFile(collectionsAssembly.Location));
         }
 
         references.AddRange(additionalReferences);

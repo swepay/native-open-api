@@ -11,6 +11,8 @@ A Roslyn Source Generator that automatically generates OpenAPI 3.1 specification
 - **Zero Runtime Overhead**: No reflection or dynamic code generation
 - **NativeLambdaRouter Integration**: Automatic discovery of `MapGet`, `MapPost`, etc. endpoints
 - **Type-Safe**: Extracts request/response types from generic parameters
+- **Schema Property Introspection**: Generates real `properties` and `required` from C# record/class types
+- **Nullable-Aware**: Nullable properties are excluded from `required` arrays
 - **OpenAPI 3.1 Compliant**: Generates valid OpenAPI 3.1 YAML specifications
 
 ## Installation
@@ -131,6 +133,79 @@ For each endpoint, the generator creates:
 - **Parameters**: Path parameters extracted from route template
 - **Request Body**: For POST, PUT, PATCH methods with schema reference
 - **Responses**: Success response with schema + standard error responses
+
+## Schema Property Generation
+
+The generator introspects C# types via Roslyn to produce real OpenAPI schemas with properties, types, formats, and required fields.
+
+### Supported Type Mappings
+
+| C# Type | OpenAPI Type | Format |
+|---------|-------------|--------|
+| `string` | `string` | — |
+| `int` | `integer` | `int32` |
+| `long` | `integer` | `int64` |
+| `float` | `number` | `float` |
+| `double` | `number` | `double` |
+| `decimal` | `number` | `double` |
+| `bool` | `boolean` | — |
+| `DateTime`, `DateTimeOffset` | `string` | `date-time` |
+| `DateOnly` | `string` | `date` |
+| `Guid` | `string` | `uuid` |
+| `Uri` | `string` | `uri` |
+| `List<T>`, `T[]`, `IReadOnlyList<T>` | `array` | items: `{T}` |
+| `Dictionary<K,V>` | `object` | — |
+| Enum types | `string` | `enum: [values]` |
+| Complex types | — | `$ref: "#/components/schemas/TypeName"` |
+
+### Example
+
+```csharp
+public sealed record CreateRoleRequest(
+    string RealmId,
+    string Name,
+    string? Description,        // nullable → not in required
+    List<string>? PermissionIds, // nullable array → not in required
+    string PerformedBy);
+
+public sealed record CreateRoleResponse(string Id, string Name);
+```
+
+Generates:
+
+```yaml
+components:
+  schemas:
+    CreateRoleRequest:
+      type: object
+      properties:
+        realmId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        permissionIds:
+          type: array
+          items:
+            type: string
+        performedBy:
+          type: string
+      required:
+        - realmId
+        - name
+        - performedBy
+    CreateRoleResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+      required:
+        - id
+        - name
+```
 
 ## Integration with NativeOpenApi
 

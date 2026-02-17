@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-02-12
+
+### Added
+- **Source Generator**: Real OpenAPI schema property generation from C# types via Roslyn introspection.
+  Previously, all schemas were emitted as placeholder stubs (`type: object`, `description: "Request type - properties to be documented"`).
+  Now the Source Generator extracts actual properties from record and class types, including:
+  - Property names (converted to camelCase for JSON)
+  - OpenAPI types and formats (`string`, `integer/int32`, `number/double`, `boolean`, `string/date-time`, `string/uuid`, etc.)
+  - `required` array based on nullability annotations (nullable properties excluded)
+  - Array/List properties rendered as `type: array` with proper `items`
+  - Enum properties rendered with `enum:` values list
+  - Complex nested types referenced via `$ref: "#/components/schemas/TypeName"`
+  - Dictionary types rendered as `type: object`
+- **Source Generator**: New `TypePropertyExtractor` class for mapping Roslyn `ITypeSymbol`/`IPropertySymbol` to OpenAPI schema properties.
+  Uses `SpecialType` and type `Name` for reliable type identification across different compilation contexts.
+- **Source Generator**: New `SchemaPropertyInfo` and `SchemaTypeInfo` data classes for property metadata.
+- **Source Generator**: `EndpointInfo` extended with `CommandProperties`, `ResponseProperties`, `CommandPropertiesResolved`, `ResponsePropertiesResolved`.
+- **Tests**: 11 new tests covering schema property generation: record properties, nullable exclusion from required,
+  integer/boolean/DateTime/Guid types, List/array properties, enum properties, class properties, empty class fallback,
+  camelCase conversion, and complex real-world `CreateRoleRequest` scenario (139 total tests).
+
+### Changed
+- **Source Generator**: `OpenApiYamlGenerator` now renders real `properties:` and `required:` sections
+  instead of placeholder descriptions when type properties are resolved.
+- **Source Generator**: `OpenApiYamlGenerator` internal `TypeInfo` class replaced by `SchemaTypeInfo`
+  with `BuildSchemaTypes()` and `MergeSchema()` for deduplication.
+- **Test Helper**: Added `System.Collections` assembly reference to `GeneratorTestHelper` for proper
+  `List<T>` resolution in test compilations.
+
+### Fixed
+- **Source Generator**: Schemas for request/response types now include actual property definitions,
+  fixing the issue where importing the generated spec showed empty schemas.
+- **Source Generator**: Optional/nullable parameters (e.g., `string? Description`, `List<string>? PermissionIds`)
+  are no longer included in the `required` array.
+
 ## [1.3.3] - 2026-02-11
 
 ### Added
