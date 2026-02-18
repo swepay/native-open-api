@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-02-12
+
+### Added
+- **Source Generator**: OpenAPI metadata support via fluent chain methods following ASP.NET Core
+  Minimal APIs patterns:
+  - `.WithName("operationId")` — sets a custom `operationId` for the endpoint
+  - `.WithSummary("text")` — sets a custom `summary` for the endpoint
+  - `.WithDescription("text")` — adds a `description` field to the endpoint
+  - `.WithTags("Tag1", "Tag2")` — overrides auto-generated tags with custom tag list
+  - `.Produces<T>(statusCode)` — adds an additional typed response with `$ref` schema
+  - `.ProducesProblem(statusCode)` — adds a `application/problem+json` error response
+- **Source Generator**: Attribute-based metadata on TCommand types as an alternative to fluent
+  chain methods. Supported attributes (namespace `NativeLambdaRouter.OpenApi.Attributes`):
+  - `[EndpointName("operationId")]` — equivalent to `.WithName()`
+  - `[EndpointSummary("text")]` — equivalent to `.WithSummary()`
+  - `[EndpointDescription("text")]` — equivalent to `.WithDescription()`
+  - `[Tags("Tag1", "Tag2")]` — equivalent to `.WithTags()`
+- **Source Generator**: Fluent chain methods take precedence over attributes when both are
+  specified on the same endpoint, following ASP.NET Core conventions.
+- **Source Generator**: `ProducesProblem` responses for status codes that overlap with default
+  error responses (400, 401, 500) replace the default `$ref` responses instead of duplicating.
+- **Source Generator**: New `GetStatusCodeDescription()` helper maps HTTP status codes to
+  standard descriptions (200→OK, 201→Created, 400→Bad Request, 404→Not Found, etc.).
+- **Models**: New `ProducesInfo` class representing additional response definitions with
+  `StatusCode`, `ResponseTypeName`, and `ContentType` fields.
+- **Models**: `EndpointInfo` extended with `OperationName`, `Summary`, `Description`, `Tags`,
+  and `AdditionalProduces` fields.
+- **Tests**: 15 new Source Generator tests covering all metadata scenarios (WithName, WithSummary,
+  WithDescription, WithTags, ProducesProblem, Produces<T>, full fluent chain, all attributes,
+  fluent-over-attribute precedence, auto-generation fallback, ProducesProblem override).
+- **Tests**: 5 new YAML generator unit tests for metadata-aware rendering (custom operationId,
+  custom summary, description inclusion, custom tags, additional produces responses).
+
+### Changed
+- **Source Generator**: `OpenApiYamlGenerator` now uses metadata-provided `operationId`,
+  `summary`, `description`, and `tags` when available, falling back to auto-generation.
+- **Source Generator**: `ApplyFluentChainOptions` extended to parse all new fluent methods.
+- **Source Generator**: Both `TransformToEndpointInfo` and `TryExtractFromSyntax` now call
+  `ApplyCommandAttributes` to read metadata from TCommand type attributes via Roslyn.
+- **Test Helper**: `IRouteEndpointBuilder` mock extended with `WithName`, `WithSummary`,
+  `WithDescription`, `WithTags`, `Produces<T>`, `ProducesProblem` methods.
+- **Test Helper**: New `CreateAttributeSource()` method providing attribute definitions
+  for compile-time testing.
+
 ## [1.4.1] - 2026-02-12
 
 ### Fixed

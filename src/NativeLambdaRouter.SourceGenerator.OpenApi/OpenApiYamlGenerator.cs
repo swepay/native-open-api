@@ -38,16 +38,34 @@ internal static class OpenApiYamlGenerator
             foreach (var endpoint in pathGroup.OrderBy(e => e.Method))
             {
                 var method = endpoint.Method.ToLowerInvariant();
-                var operationId = GenerateOperationId(endpoint);
+                var operationId = endpoint.OperationName ?? GenerateOperationId(endpoint);
+                var summary = endpoint.Summary ?? GenerateSummary(endpoint);
 
                 sb.AppendLine($"    {method}:");
                 sb.AppendLine($"      operationId: {operationId}");
-                sb.AppendLine($"      summary: \"{GenerateSummary(endpoint)}\"");
+                sb.AppendLine($"      summary: \"{EscapeYamlString(summary)}\"");
 
-                // Tags based on path
-                var tag = ExtractTag(endpoint.Path);
-                sb.AppendLine("      tags:");
-                sb.AppendLine($"        - {tag}");
+                // Description (optional)
+                if (endpoint.Description != null)
+                {
+                    sb.AppendLine($"      description: \"{EscapeYamlString(endpoint.Description)}\"");
+                }
+
+                // Tags — from metadata or auto-generated from path
+                if (endpoint.Tags.Count > 0)
+                {
+                    sb.AppendLine("      tags:");
+                    foreach (var tag in endpoint.Tags)
+                    {
+                        sb.AppendLine($"        - {tag}");
+                    }
+                }
+                else
+                {
+                    var tag = ExtractTag(endpoint.Path);
+                    sb.AppendLine("      tags:");
+                    sb.AppendLine($"        - {tag}");
+                }
 
                 // Security
                 if (endpoint.RequiresAuth)
@@ -97,13 +115,45 @@ internal static class OpenApiYamlGenerator
                 sb.AppendLine("              schema:");
                 sb.AppendLine($"                $ref: \"#/components/schemas/{endpoint.ResponseSimpleName}\"");
 
-                // Standard error responses
-                sb.AppendLine("        \"400\":");
-                sb.AppendLine("          $ref: \"#/components/responses/BadRequest\"");
-                sb.AppendLine("        \"401\":");
-                sb.AppendLine("          $ref: \"#/components/responses/Unauthorized\"");
-                sb.AppendLine("        \"500\":");
-                sb.AppendLine("          $ref: \"#/components/responses/InternalServerError\"");
+                // Additional .Produces<T>() / .ProducesProblem() responses
+                foreach (var produces in endpoint.AdditionalProduces)
+                {
+                    var statusCodeStr = produces.StatusCode.ToString();
+                    sb.AppendLine($"        \"{statusCodeStr}\":");
+                    sb.AppendLine($"          description: \"{GetStatusCodeDescription(produces.StatusCode)}\"");
+                    if (produces.ResponseTypeSimpleName != null)
+                    {
+                        sb.AppendLine("          content:");
+                        sb.AppendLine($"            {produces.ContentType}:");
+                        sb.AppendLine("              schema:");
+                        sb.AppendLine($"                $ref: \"#/components/schemas/{produces.ResponseTypeSimpleName}\"");
+                    }
+                    else if (produces.ContentType == "application/problem+json")
+                    {
+                        sb.AppendLine("          content:");
+                        sb.AppendLine($"            {produces.ContentType}:");
+                        sb.AppendLine("              schema:");
+                        sb.AppendLine("                type: object");
+                    }
+                }
+
+                // Standard error responses (only emit if not already covered by AdditionalProduces)
+                var coveredStatusCodes = new HashSet<int>(endpoint.AdditionalProduces.Select(p => p.StatusCode));
+                if (!coveredStatusCodes.Contains(400))
+                {
+                    sb.AppendLine("        \"400\":");
+                    sb.AppendLine("          $ref: \"#/components/responses/BadRequest\"");
+                }
+                if (!coveredStatusCodes.Contains(401))
+                {
+                    sb.AppendLine("        \"401\":");
+                    sb.AppendLine("          $ref: \"#/components/responses/Unauthorized\"");
+                }
+                if (!coveredStatusCodes.Contains(500))
+                {
+                    sb.AppendLine("        \"500\":");
+                    sb.AppendLine("          $ref: \"#/components/responses/InternalServerError\"");
+                }
             }
         }
 
@@ -259,6 +309,26 @@ internal static class OpenApiYamlGenerator
     private static string EscapeYamlString(string value)
     {
         return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    }
+
+    private static string GetStatusCodeDescription(int statusCode)
+    {
+        return statusCode switch
+        {
+            200 => "Successful response",
+            201 => "Created",
+            204 => "No Content",
+            400 => "Bad Request",
+            401 => "Unauthorized",
+            403 => "Forbidden",
+            404 => "Not Found",
+            409 => "Conflict",
+            422 => "Unprocessable Entity",
+            500 => "Internal Server Error",
+            502 => "Bad Gateway",
+            503 => "Service Unavailable",
+            _ => $"Response {statusCode}"
+        };
     }
 
     private static string GenerateOperationId(EndpointInfo endpoint)

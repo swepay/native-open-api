@@ -457,4 +457,222 @@ public sealed class OpenApiYamlGeneratorTests
         // Assert
         yaml.Should().Contain("tags:");
     }
+
+    [Fact]
+    public void Generate_WithOperationName_UsesCustomOperationId()
+    {
+        // Arrange
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "GET",
+                Path = "/v1/items",
+                CommandTypeName = "TestApp.GetItemsCommand",
+                ResponseTypeName = "TestApp.GetItemsResponse",
+                CommandSimpleName = "GetItemsCommand",
+                ResponseSimpleName = "GetItemsResponse",
+                OperationName = "ListAllItems"
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+
+        // Assert
+        yaml.Should().Contain("operationId: ListAllItems");
+    }
+
+    [Fact]
+    public void Generate_WithSummary_UsesCustomSummary()
+    {
+        // Arrange
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "GET",
+                Path = "/v1/items",
+                CommandTypeName = "TestApp.GetItemsCommand",
+                ResponseTypeName = "TestApp.GetItemsResponse",
+                CommandSimpleName = "GetItemsCommand",
+                ResponseSimpleName = "GetItemsResponse",
+                Summary = "Retrieve all items from inventory"
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+
+        // Assert
+        yaml.Should().Contain("summary: \"Retrieve all items from inventory\"");
+    }
+
+    [Fact]
+    public void Generate_WithDescription_IncludesDescription()
+    {
+        // Arrange
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "GET",
+                Path = "/v1/items",
+                CommandTypeName = "TestApp.GetItemsCommand",
+                ResponseTypeName = "TestApp.GetItemsResponse",
+                CommandSimpleName = "GetItemsCommand",
+                ResponseSimpleName = "GetItemsResponse",
+                Description = "Returns a paginated list of items"
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+
+        // Assert
+        yaml.Should().Contain("description: \"Returns a paginated list of items\"");
+    }
+
+    [Fact]
+    public void Generate_WithCustomTags_UsesThoseTags()
+    {
+        // Arrange
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "GET",
+                Path = "/v1/items",
+                CommandTypeName = "TestApp.GetItemsCommand",
+                ResponseTypeName = "TestApp.GetItemsResponse",
+                CommandSimpleName = "GetItemsCommand",
+                ResponseSimpleName = "GetItemsResponse",
+                Tags = new List<string> { "Inventory", "Products" }
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+
+        // Assert
+        yaml.Should().Contain("- Inventory");
+        yaml.Should().Contain("- Products");
+    }
+
+    [Fact]
+    public void Generate_WithAdditionalProduces_EmitsExtraResponses()
+    {
+        // Arrange
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "GET",
+                Path = "/v1/items/{id}",
+                CommandTypeName = "TestApp.GetItemCommand",
+                ResponseTypeName = "TestApp.GetItemResponse",
+                CommandSimpleName = "GetItemCommand",
+                ResponseSimpleName = "GetItemResponse",
+                AdditionalProduces = new List<ProducesInfo>
+                {
+                    new() { StatusCode = 404, ResponseTypeSimpleName = "NotFoundError", ContentType = "application/json" }
+                }
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+
+        // Assert
+        yaml.Should().Contain("\"404\":");
+        yaml.Should().Contain("NotFoundError");
+    }
+
+    [Fact]
+    public void Generate_WithProducesProblem_EmitsProblemJsonResponse()
+    {
+        // Arrange
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "GET",
+                Path = "/v1/items/{id}",
+                CommandTypeName = "TestApp.GetItemCommand",
+                ResponseTypeName = "TestApp.GetItemResponse",
+                CommandSimpleName = "GetItemCommand",
+                ResponseSimpleName = "GetItemResponse",
+                AdditionalProduces = new List<ProducesInfo>
+                {
+                    new() { StatusCode = 422, ContentType = "application/problem+json" }
+                }
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+
+        // Assert
+        yaml.Should().Contain("\"422\":");
+        yaml.Should().Contain("application/problem+json");
+        yaml.Should().Contain("Unprocessable Entity");
+    }
+
+    [Fact]
+    public void Generate_ProducesProblemOverridesDefaultError()
+    {
+        // Arrange
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "GET",
+                Path = "/v1/items/{id}",
+                CommandTypeName = "TestApp.GetItemCommand",
+                ResponseTypeName = "TestApp.GetItemResponse",
+                CommandSimpleName = "GetItemCommand",
+                ResponseSimpleName = "GetItemResponse",
+                AdditionalProduces = new List<ProducesInfo>
+                {
+                    new() { StatusCode = 400, ContentType = "application/problem+json" }
+                }
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+
+        // Assert — The default $ref for 400 should not appear since ProducesProblem covers it
+        yaml.Should().Contain("\"400\":");
+        yaml.Should().Contain("application/problem+json");
+        yaml.Should().NotContain("$ref: \"#/components/responses/BadRequest\"");
+    }
+
+    [Fact]
+    public void Generate_WithoutDescription_OmitsDescriptionField()
+    {
+        // Arrange
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "GET",
+                Path = "/v1/items",
+                CommandTypeName = "TestApp.GetItemsCommand",
+                ResponseTypeName = "TestApp.GetItemsResponse",
+                CommandSimpleName = "GetItemsCommand",
+                ResponseSimpleName = "GetItemsResponse"
+                // Description is null by default
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+
+        // Assert — No description field on the operation level (only response-level descriptions exist)
+        var lines = yaml.Split('\n');
+        var operationDescriptions = lines.Count(l =>
+            l.Trim().StartsWith("description:") && !l.Contains("Successful") && !l.Contains("type -"));
+        operationDescriptions.Should().Be(0);
+    }
 }

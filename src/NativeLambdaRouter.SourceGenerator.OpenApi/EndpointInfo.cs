@@ -46,6 +46,35 @@ internal sealed class EndpointInfo
     public string? ProducesContentType { get; set; }
 
     /// <summary>
+    /// Custom operationId specified via .WithName() or [EndpointName].
+    /// When null, the generator auto-generates one from the path.
+    /// </summary>
+    public string? OperationName { get; set; }
+
+    /// <summary>
+    /// Custom summary specified via .WithSummary() or [EndpointSummary].
+    /// When null, the generator auto-generates one from the HTTP method and response type.
+    /// </summary>
+    public string? Summary { get; set; }
+
+    /// <summary>
+    /// Custom description specified via .WithDescription() or [EndpointDescription].
+    /// </summary>
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Custom tags specified via .WithTags() or [Tags].
+    /// When empty, the generator auto-generates one from the path.
+    /// </summary>
+    public List<string> Tags { get; set; } = new();
+
+    /// <summary>
+    /// Additional response definitions specified via .Produces() / .ProducesProblem().
+    /// Each entry is (StatusCode, ResponseTypeSimpleName, ContentType).
+    /// </summary>
+    public List<ProducesInfo> AdditionalProduces { get; set; } = new();
+
+    /// <summary>
     /// The resolved properties for the Command type.
     /// </summary>
     public List<SchemaPropertyInfo> CommandProperties { get; set; } = new();

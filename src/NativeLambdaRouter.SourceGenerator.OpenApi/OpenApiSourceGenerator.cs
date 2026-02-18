@@ -196,8 +196,11 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         // Extract type properties for schema generation
         ExtractTypeProperties(commandType, responseType, endpoint);
 
-        // Detect fluent chain options (.AllowAnonymous(), .Produces(...), etc.)
+        // Detect fluent chain options (.AllowAnonymous(), .Produces(...), .WithName(), etc.)
         ApplyFluentChainOptions(invocation, endpoint);
+
+        // Read metadata attributes from TCommand type ([EndpointName], [Tags], etc.)
+        ApplyCommandAttributes(commandType, endpoint);
 
         return endpoint;
     }
@@ -231,7 +234,8 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
 
     /// <summary>
     /// Walks up the syntax tree from a Map* invocation to detect fluent chain calls
-    /// such as .AllowAnonymous() and .Produces("text/html").
+    /// such as .AllowAnonymous(), .Produces("text/html"), .WithName(), .WithDescription(),
+    /// .WithSummary(), .WithTags(), .Produces&lt;T&gt;(statusCode), and .ProducesProblem(statusCode).
     /// </summary>
     private static void ApplyFluentChainOptions(InvocationExpressionSyntax mapInvocation, EndpointInfo endpoint)
     {
@@ -257,22 +261,241 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
                 _ => null
             };
 
-            if (chainedMethodName == "AllowAnonymous")
+            switch (chainedMethodName)
             {
-                endpoint.RequiresAuth = false;
-            }
-            else if (chainedMethodName == "Produces")
-            {
-                // Extract the content type from the first string argument
-                var args = parentInvocation.ArgumentList.Arguments;
-                if (args.Count > 0 && args[0].Expression is LiteralExpressionSyntax literal
-                    && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
-                {
-                    endpoint.ProducesContentType = literal.Token.ValueText;
-                }
+                case "AllowAnonymous":
+                    endpoint.RequiresAuth = false;
+                    break;
+
+                case "Produces" when parentMemberAccess.Name is GenericNameSyntax gn:
+                    // .Produces<TResponse>(statusCode, contentType)
+                    ApplyGenericProduces(parentInvocation, gn, endpoint);
+                    break;
+
+                case "Produces":
+                    // .Produces("contentType") — legacy overload that sets the success content type
+                    // or .Produces(statusCode) / .Produces(statusCode, contentType) — non-generic
+                    ApplyNonGenericProduces(parentInvocation, endpoint);
+                    break;
+
+                case "ProducesProblem":
+                    ApplyProducesProblem(parentInvocation, endpoint);
+                    break;
+
+                case "WithName":
+                    endpoint.OperationName = ExtractFirstStringArgument(parentInvocation);
+                    break;
+
+                case "WithSummary":
+                    endpoint.Summary = ExtractFirstStringArgument(parentInvocation);
+                    break;
+
+                case "WithDescription":
+                    endpoint.Description = ExtractFirstStringArgument(parentInvocation);
+                    break;
+
+                case "WithTags":
+                    ExtractTagsArguments(parentInvocation, endpoint);
+                    break;
             }
 
             current = parentInvocation;
+        }
+    }
+
+    /// <summary>
+    /// Handles .Produces&lt;TResponse&gt;(statusCode, contentType) — generic overload.
+    /// </summary>
+    private static void ApplyGenericProduces(
+        InvocationExpressionSyntax invocation,
+        GenericNameSyntax genericName,
+        EndpointInfo endpoint)
+    {
+        var typeArgs = genericName.TypeArgumentList.Arguments;
+        string? typeName = typeArgs.Count > 0 ? typeArgs[0].ToString() : null;
+        // Extract simple name from potentially qualified type
+        if (typeName != null && typeName.Contains("."))
+        {
+            typeName = typeName.Substring(typeName.LastIndexOf('.') + 1);
+        }
+
+        var args = invocation.ArgumentList.Arguments;
+        var statusCode = 200;
+        var contentType = "application/json";
+
+        if (args.Count > 0)
+        {
+            statusCode = ExtractIntArgument(args[0]) ?? 200;
+        }
+        if (args.Count > 1)
+        {
+            var ct = ExtractStringArgument(args[1]);
+            if (ct != null) contentType = ct;
+        }
+
+        endpoint.AdditionalProduces.Add(new ProducesInfo
+        {
+            StatusCode = statusCode,
+            ResponseTypeSimpleName = typeName,
+            ContentType = contentType
+        });
+    }
+
+    /// <summary>
+    /// Handles non-generic .Produces() calls.
+    /// Legacy: .Produces("contentType") sets the success content type.
+    /// New: .Produces(statusCode) or .Produces(statusCode, contentType).
+    /// </summary>
+    private static void ApplyNonGenericProduces(InvocationExpressionSyntax invocation, EndpointInfo endpoint)
+    {
+        var args = invocation.ArgumentList.Arguments;
+        if (args.Count == 0) return;
+
+        var firstArg = args[0].Expression;
+
+        // Legacy: .Produces("text/html") — string argument → sets success content type
+        if (firstArg is LiteralExpressionSyntax literal
+            && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
+        {
+            endpoint.ProducesContentType = literal.Token.ValueText;
+            return;
+        }
+
+        // New: .Produces(statusCode) or .Produces(statusCode, contentType)
+        var statusCode = ExtractIntArgument(args[0]);
+        if (statusCode == null) return;
+
+        string? contentType = null;
+        if (args.Count > 1)
+        {
+            contentType = ExtractStringArgument(args[1]);
+        }
+
+        endpoint.AdditionalProduces.Add(new ProducesInfo
+        {
+            StatusCode = statusCode.Value,
+            ResponseTypeSimpleName = null,
+            ContentType = contentType ?? "application/json"
+        });
+    }
+
+    /// <summary>
+    /// Handles .ProducesProblem(statusCode, contentType).
+    /// </summary>
+    private static void ApplyProducesProblem(InvocationExpressionSyntax invocation, EndpointInfo endpoint)
+    {
+        var args = invocation.ArgumentList.Arguments;
+        if (args.Count == 0) return;
+
+        var statusCode = ExtractIntArgument(args[0]) ?? 500;
+        var contentType = "application/problem+json";
+        if (args.Count > 1)
+        {
+            var ct = ExtractStringArgument(args[1]);
+            if (ct != null) contentType = ct;
+        }
+
+        endpoint.AdditionalProduces.Add(new ProducesInfo
+        {
+            StatusCode = statusCode,
+            ResponseTypeSimpleName = null,
+            ContentType = contentType
+        });
+    }
+
+    /// <summary>
+    /// Extracts all string arguments from .WithTags("A", "B", "C").
+    /// </summary>
+    private static void ExtractTagsArguments(InvocationExpressionSyntax invocation, EndpointInfo endpoint)
+    {
+        foreach (var arg in invocation.ArgumentList.Arguments)
+        {
+            if (arg.Expression is LiteralExpressionSyntax literal
+                && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
+            {
+                endpoint.Tags.Add(literal.Token.ValueText);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Extracts the first string argument from a method invocation.
+    /// </summary>
+    private static string? ExtractFirstStringArgument(InvocationExpressionSyntax invocation)
+    {
+        var args = invocation.ArgumentList.Arguments;
+        if (args.Count == 0) return null;
+
+        return ExtractStringArgument(args[0]);
+    }
+
+    /// <summary>
+    /// Extracts a string value from an argument.
+    /// </summary>
+    private static string? ExtractStringArgument(ArgumentSyntax argument)
+    {
+        if (argument.Expression is LiteralExpressionSyntax literal
+            && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
+        {
+            return literal.Token.ValueText;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Extracts an integer value from an argument.
+    /// </summary>
+    private static int? ExtractIntArgument(ArgumentSyntax argument)
+    {
+        if (argument.Expression is LiteralExpressionSyntax literal
+            && literal.Token.IsKind(SyntaxKind.NumericLiteralToken)
+            && literal.Token.Value is int intValue)
+        {
+            return intValue;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Reads metadata attributes ([EndpointName], [EndpointSummary], [EndpointDescription], [Tags])
+    /// from the TCommand type and applies them to the endpoint. Fluent chain calls take precedence.
+    /// </summary>
+    private static void ApplyCommandAttributes(ITypeSymbol commandType, EndpointInfo endpoint)
+    {
+        foreach (var attr in commandType.GetAttributes())
+        {
+            var attrName = attr.AttributeClass?.Name;
+            if (attrName == null) continue;
+
+            switch (attrName)
+            {
+                case "EndpointNameAttribute" when endpoint.OperationName == null:
+                    if (attr.ConstructorArguments.Length > 0 && attr.ConstructorArguments[0].Value is string name)
+                        endpoint.OperationName = name;
+                    break;
+
+                case "EndpointSummaryAttribute" when endpoint.Summary == null:
+                    if (attr.ConstructorArguments.Length > 0 && attr.ConstructorArguments[0].Value is string summary)
+                        endpoint.Summary = summary;
+                    break;
+
+                case "EndpointDescriptionAttribute" when endpoint.Description == null:
+                    if (attr.ConstructorArguments.Length > 0 && attr.ConstructorArguments[0].Value is string desc)
+                        endpoint.Description = desc;
+                    break;
+
+                case "TagsAttribute" when endpoint.Tags.Count == 0:
+                    if (attr.ConstructorArguments.Length > 0)
+                    {
+                        var tagValues = attr.ConstructorArguments[0].Values;
+                        foreach (var tv in tagValues)
+                        {
+                            if (tv.Value is string tag)
+                                endpoint.Tags.Add(tag);
+                        }
+                    }
+                    break;
+            }
         }
     }
 
@@ -555,8 +778,14 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
             ExtractTypeProperties(commandTypeInfo.Type, responseTypeInfo.Type, endpoint);
         }
 
-        // Detect fluent chain options (.AllowAnonymous(), .Produces(...), etc.)
+        // Detect fluent chain options (.AllowAnonymous(), .Produces(...), .WithName(), etc.)
         ApplyFluentChainOptions(invocation, endpoint);
+
+        // Read metadata attributes from TCommand type ([EndpointName], [Tags], etc.)
+        if (commandTypeInfo.Type != null)
+        {
+            ApplyCommandAttributes(commandTypeInfo.Type, endpoint);
+        }
 
         return endpoint;
     }

@@ -103,7 +103,18 @@ public interface IRouteEndpointBuilder
 {
     IRouteEndpointBuilder AllowAnonymous();
     IRouteEndpointBuilder Produces(string contentType);
+    IRouteEndpointBuilder Produces(int statusCode);
+    IRouteEndpointBuilder Produces(int statusCode, string contentType);
+    IRouteEndpointBuilder Produces<T>(int statusCode);
+    IRouteEndpointBuilder Produces<T>(int statusCode, string contentType);
+    IRouteEndpointBuilder ProducesProblem(int statusCode);
+    IRouteEndpointBuilder ProducesProblem(int statusCode, string contentType);
+    IRouteEndpointBuilder WithName(string name);
+    IRouteEndpointBuilder WithSummary(string summary);
+    IRouteEndpointBuilder WithDescription(string description);
+    IRouteEndpointBuilder WithTags(params string[] tags);
     IRouteEndpointBuilder WithHeader(string name, string value);
+    IRouteEndpointBuilder RequireRole(params string[] roles);
 }
 
 public interface IRouteBuilder
@@ -114,6 +125,44 @@ public interface IRouteBuilder
     IRouteEndpointBuilder MapDelete<TCommand, TResponse>(string path, Func<object, TCommand> handler);
     IRouteEndpointBuilder MapPatch<TCommand, TResponse>(string path, Func<object, TCommand> handler);
     IRouteEndpointBuilder Map<TCommand, TResponse>(string method, string path, Func<object, TCommand> handler);
+}
+";
+    }
+
+    /// <summary>
+    /// Creates attribute definitions for testing attribute-based metadata.
+    /// </summary>
+    public static string CreateAttributeSource()
+    {
+        return @"
+namespace NativeLambdaRouter.OpenApi.Attributes;
+
+[System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Method)]
+public sealed class EndpointNameAttribute : System.Attribute
+{
+    public string Name { get; }
+    public EndpointNameAttribute(string name) => Name = name;
+}
+
+[System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Method)]
+public sealed class EndpointSummaryAttribute : System.Attribute
+{
+    public string Summary { get; }
+    public EndpointSummaryAttribute(string summary) => Summary = summary;
+}
+
+[System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Method)]
+public sealed class EndpointDescriptionAttribute : System.Attribute
+{
+    public string Description { get; }
+    public EndpointDescriptionAttribute(string description) => Description = description;
+}
+
+[System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Method, AllowMultiple = false)]
+public sealed class TagsAttribute : System.Attribute
+{
+    public string[] Tags { get; }
+    public TagsAttribute(params string[] tags) => Tags = tags;
 }
 ";
     }
