@@ -76,16 +76,19 @@ public sealed class OpenApiLinter
                     continue;
                 }
 
-                if (operation["security"] is not JsonArray security || security.Count == 0)
+                // OpenAPI 3.1: security: [] (empty array) explicitly disables security (anonymous endpoint).
+                // Missing security block means security is unspecified.
+                if (operation["security"] is JsonArray security)
                 {
-                    errors.Add($"{sourceName}: security required for '{method} {path}'");
-                }
-                else
-                {
-                    if (!ContainsSecurityScheme(security, "JwtBearer") && !ContainsSecurityScheme(security, "OAuth2"))
+                    // Explicit empty array → anonymous endpoint, no security required
+                    if (security.Count > 0 && !ContainsSecurityScheme(security, "JwtBearer") && !ContainsSecurityScheme(security, "OAuth2"))
                     {
                         errors.Add($"{sourceName}: JwtBearer or OAuth2 required for '{method} {path}'");
                     }
+                }
+                else
+                {
+                    errors.Add($"{sourceName}: security required for '{method} {path}'");
                 }
 
                 var responses = operation["responses"] as JsonObject;

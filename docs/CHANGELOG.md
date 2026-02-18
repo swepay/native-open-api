@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.1] - 2026-02-12
+
+### Fixed
+- **Linter**: `security: []` (empty array) is now recognized as a valid anonymous endpoint marker
+  per OpenAPI 3.1 specification. Previously, the linter required a non-empty `security` block on
+  every operation, incorrectly rejecting endpoints marked with `.AllowAnonymous()`.
+- **Merger**: Duplicate component schemas with identical definitions are now silently skipped
+  instead of throwing `InvalidOperationException`. This fixes runtime errors when multiple Lambda
+  partials reference the same shared types (e.g., `ErrorResponse`, `PaginatedResponse`).
+  Conflicting definitions (same key, different content) still throw with a detailed error message
+  showing both definitions for easier debugging.
+- **Source Generator**: Anonymous endpoints (`.AllowAnonymous()`) now emit `security: []` in the
+  generated YAML instead of omitting the `security` block entirely. This follows the OpenAPI 3.1
+  convention where `security: []` explicitly overrides any global security requirement.
+
+### Changed
+- **Sample YAMLs**: Updated `identity.yaml` and `openid.yaml` partials in `MultiLambdaSample`
+  to include `security: []` on all anonymous endpoints.
+
 ## [1.4.0] - 2026-02-12
 
 ### Added

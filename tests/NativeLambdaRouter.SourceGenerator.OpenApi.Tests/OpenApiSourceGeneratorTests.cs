@@ -579,10 +579,10 @@ public class MyRouter
         var result = GeneratorTestHelper.RunGenerator(sourceCode);
         var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
 
-        // Assert — The YAML should NOT contain a security block for this endpoint
+        // Assert — The YAML should contain security: [] for anonymous endpoints (OpenAPI 3.1 convention)
         generatedSource.Should().NotBeNull();
         generatedSource.Should().Contain("/v1/public");
-        generatedSource.Should().NotContain("security:");
+        generatedSource.Should().Contain("security: []");
         generatedSource.Should().NotContain("JwtBearer");
     }
 
@@ -645,10 +645,10 @@ public class MyRouter
         var result = GeneratorTestHelper.RunGenerator(sourceCode);
         var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
 
-        // Assert — No security block AND custom content type
+        // Assert — security: [] for anonymous AND custom content type
         generatedSource.Should().NotBeNull();
         generatedSource.Should().Contain("/v1/openapi");
-        generatedSource.Should().NotContain("security:");
+        generatedSource.Should().Contain("security: []");
         generatedSource.Should().NotContain("JwtBearer");
         generatedSource.Should().Contain("text/html");
         generatedSource.Should().NotContain("application/json");
@@ -721,7 +721,8 @@ public class MyRouter
 
         // Assert — Both should be applied regardless of order
         generatedSource.Should().NotBeNull();
-        generatedSource.Should().NotContain("security:");
+        generatedSource.Should().Contain("security: []");
+        generatedSource.Should().NotContain("JwtBearer");
         generatedSource.Should().Contain("text/html");
     }
 

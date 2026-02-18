@@ -83,6 +83,8 @@ public class OpenApiDocumentMerger
 
     /// <summary>
     /// Merges components from a source document into the target root.
+    /// When the same component key already exists, identical definitions are silently
+    /// skipped while conflicting definitions raise an error.
     /// </summary>
     protected virtual void MergeComponents(JsonObject targetRoot, JsonNode sourceRoot)
     {
@@ -110,7 +112,20 @@ public class OpenApiDocumentMerger
             {
                 if (targetSection.ContainsKey(entry.Key))
                 {
-                    throw new InvalidOperationException($"Duplicate component '{component.Key}.{entry.Key}'.");
+                    // Duplicate key — check if the definitions are equivalent.
+                    // If they are, silently skip; otherwise report the conflict.
+                    var existingJson = targetSection[entry.Key]?.ToJsonString() ?? "";
+                    var incomingJson = entry.Value?.ToJsonString() ?? "";
+
+                    if (string.Equals(existingJson, incomingJson, StringComparison.Ordinal))
+                    {
+                        // Identical definition — safe to skip
+                        continue;
+                    }
+
+                    throw new InvalidOperationException(
+                        $"Conflicting component '{component.Key}.{entry.Key}'. "
+                        + $"Existing: {existingJson}, Incoming: {incomingJson}.");
                 }
 
                 targetSection[entry.Key] = entry.Value?.DeepClone();

@@ -92,6 +92,34 @@ public class OpenApiLinterTests
     }
 
     [Fact]
+    public void Lint_ShouldNotReturnError_WhenSecurityIsEmptyArray_AnonymousEndpoint()
+    {
+        // Arrange
+        var options = OpenApiLintOptions.Empty;
+        var linter = new OpenApiLinter(options);
+        var root = JsonNode.Parse("""
+        {
+            "openapi": "3.1.0",
+            "paths": {
+                "/v1/auth/login": {
+                    "post": {
+                        "security": [],
+                        "responses": {"200": {"$ref": "#/components/responses/Success"}}
+                    }
+                }
+            }
+        }
+        """)!;
+
+        // Act
+        var errors = linter.Lint("test.yaml", root);
+
+        // Assert - security: [] means anonymous, should not require JwtBearer
+        errors.Should().NotContain(e => e.Contains("security required"));
+        errors.Should().NotContain(e => e.Contains("JwtBearer or OAuth2 required"));
+    }
+
+    [Fact]
     public void Lint_ShouldReturnError_WhenSecurityMissing()
     {
         // Arrange

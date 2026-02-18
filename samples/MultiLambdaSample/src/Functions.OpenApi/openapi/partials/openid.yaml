@@ -11,6 +11,7 @@ paths:
       summary: "Get Jwks"
       tags:
         - .well-known
+      security: []
       responses:
         "200":
           description: "Successful response"
@@ -30,6 +31,7 @@ paths:
       summary: "Get OpenIdConfiguration"
       tags:
         - .well-known
+      security: []
       responses:
         "200":
           description: "Successful response"
@@ -49,6 +51,7 @@ paths:
       summary: "Create Token"
       tags:
         - V1
+      security: []
       requestBody:
         required: true
         content:

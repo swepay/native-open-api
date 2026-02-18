@@ -55,6 +55,11 @@ internal static class OpenApiYamlGenerator
                     sb.AppendLine("      security:");
                     sb.AppendLine("        - JwtBearer: []");
                 }
+                else
+                {
+                    // OpenAPI 3.1: empty security array explicitly marks the endpoint as anonymous
+                    sb.AppendLine("      security: []");
+                }
 
                 // Parameters from path
                 var pathParams = ExtractPathParameters(endpoint.Path);

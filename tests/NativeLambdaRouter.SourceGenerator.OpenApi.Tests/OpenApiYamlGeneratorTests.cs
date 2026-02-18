@@ -250,8 +250,9 @@ public sealed class OpenApiYamlGeneratorTests
         // Act
         var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
 
-        // Assert
-        yaml.Should().NotContain("security:");
+        // Assert – anonymous endpoints emit security: [] per OpenAPI 3.1
+        yaml.Should().Contain("security: []");
+        yaml.Should().NotContain("JwtBearer");
     }
 
     [Fact]

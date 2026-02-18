@@ -120,15 +120,53 @@ public class OpenApiDocumentMergerTests
     }
 
     [Fact]
-    public void Merge_ShouldThrowOnDuplicateComponent()
+    public void Merge_ShouldSkipIdenticalDuplicateComponent()
     {
         // Arrange
         var schemas = CreateEmptyPart("schemas");
         var responses = CreateEmptyPart("responses");
         var security = CreateEmptyPart("security");
-        // Both partials define the same component schema (and have paths so they get processed)
-        var partial1 = CreatePartWithPathAndComponent("partial1", "/v1/users", "schemas", "DuplicateSchema");
-        var partial2 = CreatePartWithPathAndComponent("partial2", "/v1/products", "schemas", "DuplicateSchema");
+        // Both partials define the same component schema with identical content
+        var partial1 = CreatePartWithPathAndComponent("partial1", "/v1/users", "schemas", "SharedSchema");
+        var partial2 = CreatePartWithPathAndComponent("partial2", "/v1/products", "schemas", "SharedSchema");
+        var partials = new[] { partial1, partial2 };
+
+        // Act
+        var result = _merger.Merge(schemas, responses, security, partials);
+
+        // Assert - identical duplicates should be silently merged
+        var components = result["components"] as JsonObject;
+        var schemasSection = components!["schemas"] as JsonObject;
+        schemasSection!.ContainsKey("SharedSchema").Should().BeTrue();
+    }
+
+    [Fact]
+    public void Merge_ShouldThrowOnConflictingComponent()
+    {
+        // Arrange
+        var schemas = CreateEmptyPart("schemas");
+        var responses = CreateEmptyPart("responses");
+        var security = CreateEmptyPart("security");
+        // Both partials define the same component schema with DIFFERENT content
+        var partial1 = CreatePartWithPathAndComponent("partial1", "/v1/users", "schemas", "ConflictSchema");
+        var partial2Json = """
+        {
+            "paths": {
+                "/v1/products": {
+                    "get": {}
+                }
+            },
+            "components": {
+                "schemas": {
+                    "ConflictSchema": {
+                        "type": "object",
+                        "description": "Different definition"
+                    }
+                }
+            }
+        }
+        """;
+        var partial2 = new OpenApiDocumentPart("partial2", "partial2.yaml", JsonNode.Parse(partial2Json)!, partial2Json);
         var partials = new[] { partial1, partial2 };
 
         // Act
@@ -136,7 +174,28 @@ public class OpenApiDocumentMergerTests
 
         // Assert
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Duplicate component*");
+            .WithMessage("*Conflicting component*");
+    }
+
+    [Fact]
+    public void Merge_ShouldNotThrowOnIdenticalDuplicateComponent()
+    {
+        // Arrange
+        var schemas = CreateEmptyPart("schemas");
+        var responses = CreateEmptyPart("responses");
+        var security = CreateEmptyPart("security");
+        // Both partials define the same component schema with identical content
+        var partial1 = CreatePartWithPathAndComponent("partial1", "/v1/users", "schemas", "DuplicateSchema");
+        var partial2 = CreatePartWithPathAndComponent("partial2", "/v1/products", "schemas", "DuplicateSchema");
+        var partials = new[] { partial1, partial2 };
+
+        // Act — should NOT throw because definitions are identical
+        var result = _merger.Merge(schemas, responses, security, partials);
+
+        // Assert
+        var components = result["components"] as JsonObject;
+        var schemasSection = components!["schemas"] as JsonObject;
+        schemasSection!.ContainsKey("DuplicateSchema").Should().BeTrue();
     }
 
     private static OpenApiDocumentPart CreatePartWithPathAndComponent(string name, string path, string componentType, string componentName)
