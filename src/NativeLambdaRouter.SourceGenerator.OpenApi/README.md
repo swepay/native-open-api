@@ -13,6 +13,7 @@ A Roslyn Source Generator that automatically generates OpenAPI 3.1 specification
 - **Type-Safe**: Extracts request/response types from generic parameters
 - **Schema Property Introspection**: Generates real `properties` and `required` from C# record/class types
 - **Nullable-Aware**: Nullable properties are excluded from `required` arrays
+- **Metadata & Extensions**: Fluent chain methods (`.WithName()`, `.WithSummary()`, `.Produces<T>()`, etc.) and attribute-based metadata
 - **OpenAPI 3.1 Compliant**: Generates valid OpenAPI 3.1 YAML specifications
 
 ## Installation
@@ -32,9 +33,17 @@ public class MyRouter : RoutedApiGatewayFunction
 {
     protected override void ConfigureRoutes(IRouteBuilder routes)
     {
-        routes.MapGet<GetItemsCommand, GetItemsResponse>("/v1/items", ctx => new GetItemsCommand());
-        routes.MapPost<CreateItemCommand, CreateItemResponse>("/v1/items", ctx => Deserialize<CreateItemCommand>(ctx.Body!));
-        routes.MapGet<GetItemByIdCommand, GetItemByIdResponse>("/v1/items/{id}", ctx => new GetItemByIdCommand(ctx.PathParameters["id"]));
+        routes.MapGet<GetItemsCommand, GetItemsResponse>("/v1/items", ctx => new GetItemsCommand())
+            .WithTags("Items")
+            .WithSummary("List all items");
+
+        routes.MapPost<CreateItemCommand, CreateItemResponse>("/v1/items", ctx => Deserialize<CreateItemCommand>(ctx.Body!))
+            .WithName("CreateItem")
+            .WithDescription("Creates a new item in the catalog");
+
+        routes.MapGet<GetItemByIdCommand, GetItemByIdResponse>("/v1/items/{id}", ctx => new GetItemByIdCommand(ctx.PathParameters["id"]))
+            .Produces<NotFoundError>(404);
+
         routes.MapPut<UpdateItemCommand, UpdateItemResponse>("/v1/items/{id}", ctx => Deserialize<UpdateItemCommand>(ctx.Body!));
         routes.MapDelete<DeleteItemCommand, DeleteItemResponse>("/v1/items/{id}", ctx => new DeleteItemCommand(ctx.PathParameters["id"]));
     }
@@ -126,13 +135,118 @@ The generator detects all NativeLambdaRouter mapping methods:
 
 For each endpoint, the generator creates:
 
-- **Operation ID**: Auto-generated from HTTP method and path (e.g., `getV1Items`)
-- **Summary**: Generated from command type name
-- **Tags**: Extracted from path segments for grouping
-- **Security**: JWT Bearer authentication by default
+- **Operation ID**: Auto-generated from HTTP method and path (e.g., `getV1Items`), or customized via `.WithName()` / `[EndpointName]`
+- **Summary**: Generated from command type name, or customized via `.WithSummary()` / `[EndpointSummary]`
+- **Description**: Included when set via `.WithDescription()` / `[EndpointDescription]`
+- **Tags**: Extracted from path segments for grouping, or customized via `.WithTags()` / `[Tags]`
+- **Security**: JWT Bearer authentication by default; `security: []` for anonymous endpoints (`.AllowAnonymous()`)
 - **Parameters**: Path parameters extracted from route template
 - **Request Body**: For POST, PUT, PATCH methods with schema reference
-- **Responses**: Success response with schema + standard error responses
+- **Responses**: Success response with schema + standard error responses + additional responses via `.Produces<T>()` / `.ProducesProblem()`
+
+## Metadata & Extensions (v1.5.0+)
+
+The generator supports two ways to customize the generated OpenAPI spec for each endpoint: **fluent chain methods** and **attributes**. Both follow ASP.NET Core Minimal APIs patterns.
+
+### Fluent Chain Methods
+
+Chain methods directly on `MapGet`, `MapPost`, etc.:
+
+```csharp
+routes.MapGet<GetClientsCommand, GetClientsResponse>("/v1/clients", ctx => new GetClientsCommand())
+    .WithName("ListAllClients")              // custom operationId
+    .WithSummary("Retrieve all clients")     // custom summary
+    .WithDescription("Returns a paginated list of registered clients") // description
+    .WithTags("Clients", "Admin")            // custom tags (overrides auto-generated)
+    .Produces<NotFoundError>(404)            // typed additional response
+    .ProducesProblem(422);                   // problem+json error response
+```
+
+| Method | Effect |
+|--------|--------|
+| `.WithName("id")` | Sets `operationId` in the YAML |
+| `.WithSummary("text")` | Sets `summary` in the YAML |
+| `.WithDescription("text")` | Adds `description` field to the operation |
+| `.WithTags("A", "B")` | Overrides auto-generated `tags` |
+| `.Produces<T>(statusCode)` | Adds a typed response with `$ref` to schema |
+| `.ProducesProblem(statusCode)` | Adds a `application/problem+json` error response |
+
+### Attribute-Based Metadata
+
+Apply attributes on the **TCommand** type as an alternative to fluent methods:
+
+```csharp
+using NativeLambdaRouter.OpenApi.Attributes;
+
+[EndpointName("ListAllClients")]
+[EndpointSummary("Retrieve all clients")]
+[EndpointDescription("Returns a paginated list of registered clients")]
+[Tags("Clients", "Admin")]
+public class GetClientsCommand { }
+```
+
+| Attribute | Equivalent Fluent Method |
+|-----------|--------------------------|
+| `[EndpointName("id")]` | `.WithName("id")` |
+| `[EndpointSummary("text")]` | `.WithSummary("text")` |
+| `[EndpointDescription("text")]` | `.WithDescription("text")` |
+| `[Tags("A", "B")]` | `.WithTags("A", "B")` |
+
+### Precedence
+
+When both fluent chain and attributes are set for the same endpoint, **fluent chain takes precedence**, following ASP.NET Core conventions:
+
+```csharp
+[EndpointName("FromAttribute")]     // ← ignored
+[Tags("AttrTag")]                    // ← ignored
+public class ListClientsCommand { }
+
+routes.MapGet<ListClientsCommand, ListClientsResponse>("/v1/clients", ctx => new())
+    .WithName("FromFluentChain")     // ← wins → operationId: FromFluentChain
+    .WithTags("FluentTag");          // ← wins → tags: [FluentTag]
+```
+
+### Additional Responses
+
+Use `.Produces<T>(statusCode)` and `.ProducesProblem(statusCode)` to define additional responses beyond the default 200/400/401/500:
+
+```csharp
+routes.MapGet<GetItemCommand, GetItemResponse>("/v1/items/{id}", ctx => new GetItemCommand(ctx.PathParameters["id"]))
+    .Produces<NotFoundError>(404)    // typed response → $ref schema
+    .ProducesProblem(422);           // problem+json → generic error
+```
+
+Generates:
+
+```yaml
+responses:
+  "200":
+    description: OK
+    content:
+      application/json:
+        schema:
+          $ref: "#/components/schemas/GetItemResponse"
+  "404":
+    description: Not Found
+    content:
+      application/json:
+        schema:
+          $ref: "#/components/schemas/NotFoundError"
+  "422":
+    description: Unprocessable Entity
+    content:
+      application/problem+json:
+        schema:
+          type: object
+  "400":
+    $ref: "#/components/responses/BadRequest"
+  "401":
+    $ref: "#/components/responses/Unauthorized"
+  "500":
+    $ref: "#/components/responses/InternalError"
+```
+
+> **Note:** When `.ProducesProblem(statusCode)` overlaps with a default error response (400, 401, 500), the custom `application/problem+json` response **replaces** the default `$ref` — no duplicates.
 
 ## Schema Property Generation
 
@@ -274,15 +388,15 @@ Each Function project only needs:
 
 ```xml
 <!-- Functions.Admin.csproj, Functions.Identity.csproj, Functions.OpenId.csproj -->
-<PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi" Version="1.3.3" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-<PackageReference Include="NativeOpenApi" Version="1.3.3" />
+<PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi" Version="1.5.0" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+<PackageReference Include="NativeOpenApi" Version="1.5.0" />
 ```
 
 And the consolidator project:
 
 ```xml
 <!-- Functions.OpenApi.csproj -->
-<PackageReference Include="NativeOpenApi" Version="1.3.3" />
+<PackageReference Include="NativeOpenApi" Version="1.5.0" />
 <ProjectReference Include="..\Functions.Admin\Functions.Admin.csproj" />
 <ProjectReference Include="..\Functions.Identity\Functions.Identity.csproj" />
 <ProjectReference Include="..\Functions.OpenId\Functions.OpenId.csproj" />

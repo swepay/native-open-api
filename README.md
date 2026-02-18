@@ -40,6 +40,9 @@ Roslyn Source Generator que descobre endpoints `MapGet`, `MapPost`, `MapPut`, `M
 - Geração em compile-time (zero overhead em runtime)
 - Descoberta automática de endpoints via análise sintática/semântica
 - Operation IDs, tags, security e path parameters gerados automaticamente
+- Metadata customizável via fluent chain (`.WithName()`, `.WithSummary()`, `.WithDescription()`, `.WithTags()`) e atributos (`[EndpointName]`, `[EndpointSummary]`, `[EndpointDescription]`, `[Tags]`)
+- Respostas adicionais via `.Produces<T>(statusCode)` e `.ProducesProblem(statusCode)`
+- Introspecção real de propriedades de tipos C# via Roslyn (records, classes, enums, arrays, nullables)
 - Implementa `IGeneratedOpenApiSpec` quando NativeOpenApi está referenciado
 - Namespace customizável via `OpenApiSpecName` (resolve `AssemblyName=bootstrap` em AWS Lambda)
 
