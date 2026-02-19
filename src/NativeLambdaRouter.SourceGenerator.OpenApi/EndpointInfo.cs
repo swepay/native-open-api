@@ -46,6 +46,13 @@ internal sealed class EndpointInfo
     public string? ProducesContentType { get; set; }
 
     /// <summary>
+    /// The content type accepted by this endpoint for request body.
+    /// When null, defaults to "application/json" for POST/PUT/PATCH methods.
+    /// Set via .Accepts("application/x-www-form-urlencoded") or [Accepts].
+    /// </summary>
+    public string? AcceptsContentType { get; set; }
+
+    /// <summary>
     /// Custom operationId specified via .WithName() or [EndpointName].
     /// When null, the generator auto-generates one from the path.
     /// </summary>

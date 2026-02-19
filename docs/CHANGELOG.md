@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.1] - 2026-02-19
+
+### Added
+- **Source Generator**: Support for `application/x-www-form-urlencoded` request bodies via
+  `.Accepts("application/x-www-form-urlencoded")` fluent chain method and `[Accepts]` attribute.
+  Previously, all POST/PUT/PATCH endpoints were generated with `application/json` and a `$ref` to
+  the command schema. Now, form-encoded endpoints emit an inline `type: object` schema with
+  individual string properties extracted from the TCommand type, matching the OpenAPI 3.1
+  convention for HTML form submissions and OAuth2 token endpoints.
+- **Source Generator**: New `AcceptsContentType` field on `EndpointInfo` to store the request
+  body content type. When null, defaults to `application/json` with `$ref` schema (backward
+  compatible).
+- **Source Generator**: `AppendFormEncodedSchema()` helper in `OpenApiYamlGenerator` that emits
+  inline form field properties with `type: string` and proper `required` arrays based on
+  nullability. Falls back to a description placeholder when properties cannot be resolved.
+- **Source Generator**: `[Accepts]` attribute support on TCommand types — fluent chain
+  `.Accepts()` takes precedence over the attribute, following the same convention as other
+  metadata methods.
+- **Tests**: 7 new Source Generator tests for form-encoded request bodies: fluent chain,
+  required fields, no `$ref`, full fluent chain with metadata, default JSON fallback,
+  attribute-based, and fluent-over-attribute precedence.
+- **Tests**: 3 new YAML generator unit tests for form-encoded content type, unresolved fallback,
+  and default JSON `$ref` behavior.
+- **Test Helper**: `IRouteEndpointBuilder` mock extended with `.Accepts(string contentType)`.
+- **Test Helper**: `CreateAttributeSource()` extended with `AcceptsAttribute` definition.
+
+### Changed
+- **Source Generator**: `OpenApiYamlGenerator` request body section now uses
+  `endpoint.AcceptsContentType` to determine the content type. For
+  `application/x-www-form-urlencoded`, properties are emitted inline as string fields instead
+  of using `$ref` to the command schema.
+- **Source Generator**: `ApplyFluentChainOptions` extended to detect `.Accepts()` calls.
+- **Source Generator**: `ApplyCommandAttributes` extended to read `[Accepts]` attribute.
+
 ## [1.5.0] - 2026-02-12
 
 ### Added

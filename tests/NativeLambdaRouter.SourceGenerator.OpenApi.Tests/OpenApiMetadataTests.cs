@@ -2,8 +2,8 @@ namespace NativeLambdaRouter.SourceGenerator.OpenApi.Tests;
 
 /// <summary>
 /// Tests for OpenAPI metadata support: fluent chain methods (.WithName, .WithDescription,
-/// .WithSummary, .WithTags, .Produces&lt;T&gt;, .ProducesProblem) and attribute-based metadata
-/// ([EndpointName], [EndpointSummary], [EndpointDescription], [Tags]).
+/// .WithSummary, .WithTags, .Produces&lt;T&gt;, .ProducesProblem, .Accepts) and attribute-based metadata
+/// ([EndpointName], [EndpointSummary], [EndpointDescription], [Tags], [Accepts]).
 /// </summary>
 public sealed class OpenApiMetadataTests
 {
@@ -619,5 +619,297 @@ public class MyRouter
         generatedSource.Should().Contain("application/problem+json");
         // The default $ref: "#/components/responses/BadRequest" should NOT appear
         generatedSource.Should().NotContain("$ref: \"\"#/components/responses/BadRequest\"\"");
+    }
+
+    // ── Accepts (fluent chain) ──────────────────────────────────────
+
+    [Fact]
+    public void Generator_AcceptsFormUrlEncoded_UsesFormContentType()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public sealed record RefreshTokenCommand(
+    string RealmId,
+    string ClientId,
+    string RefreshToken,
+    string? ClientSecret);
+
+public sealed record TokenResponse(string AccessToken, string TokenType);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<RefreshTokenCommand, TokenResponse>(
+            ""/v1/realms/{realm}/token"", ctx => new RefreshTokenCommand("""", """", """", null))
+            .Accepts(""application/x-www-form-urlencoded"")
+            .AllowAnonymous();
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("application/x-www-form-urlencoded");
+        // Form-encoded should have inline properties, not $ref to command schema
+        generatedSource.Should().Contain("realmId");
+        generatedSource.Should().Contain("clientId");
+        generatedSource.Should().Contain("refreshToken");
+        generatedSource.Should().Contain("clientSecret");
+        // All form fields should be type: string
+        generatedSource.Should().Contain("type: string");
+    }
+
+    [Fact]
+    public void Generator_AcceptsFormUrlEncoded_EmitsRequiredFields()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public sealed record TokenCommand(
+    string ClientId,
+    string GrantType,
+    string? Scope);
+
+public sealed record TokenResponse(string AccessToken);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<TokenCommand, TokenResponse>(
+            ""/v1/token"", ctx => new TokenCommand("""", """", null))
+            .Accepts(""application/x-www-form-urlencoded"")
+            .AllowAnonymous();
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — required array should only include non-nullable fields
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("application/x-www-form-urlencoded");
+        generatedSource.Should().Contain("- clientId");
+        generatedSource.Should().Contain("- grantType");
+        // Scope is nullable, should NOT be required
+        generatedSource.Should().NotContain("- scope");
+    }
+
+    [Fact]
+    public void Generator_AcceptsFormUrlEncoded_NoRefToCommandSchema()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public sealed record LoginCommand(string Username, string Password);
+public sealed record LoginResponse(string Token);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<LoginCommand, LoginResponse>(
+            ""/v1/login"", ctx => new LoginCommand("""", """"))
+            .Accepts(""application/x-www-form-urlencoded"")
+            .AllowAnonymous();
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — requestBody should NOT use $ref for the command schema
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("application/x-www-form-urlencoded");
+        // Inline properties instead of $ref
+        generatedSource.Should().Contain("username");
+        generatedSource.Should().Contain("password");
+        // The requestBody should not reference LoginCommand via $ref
+        generatedSource.Should().NotContain("$ref: \"\"#/components/schemas/LoginCommand\"\"");
+    }
+
+    [Fact]
+    public void Generator_AcceptsFormUrlEncoded_WithFullFluentChain()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public sealed record RefreshTokenCommand(
+    string RealmId,
+    string ClientId,
+    string RefreshToken,
+    string? ClientSecret,
+    string? Scope);
+
+public sealed record TokenResponse(string AccessToken, string TokenType);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<RefreshTokenCommand, TokenResponse>(
+            ""/v1/realms/{realm}/protocol/openid-connect/refresh"",
+            ctx => new RefreshTokenCommand("""", """", """", null, null))
+            .WithName(""RefreshToken"")
+            .WithSummary(""Refresh token endpoint"")
+            .WithDescription(""Exchanges a valid refresh token for a new access token."")
+            .WithTags(""OAuth2"")
+            .Accepts(""application/x-www-form-urlencoded"")
+            .Produces<TokenResponse>(200)
+            .ProducesProblem(400)
+            .ProducesProblem(401)
+            .AllowAnonymous();
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("operationId: RefreshToken");
+        generatedSource.Should().Contain("summary: \"\"Refresh token endpoint\"\"");
+        generatedSource.Should().Contain("description: \"\"Exchanges a valid refresh token for a new access token.\"\"");
+        generatedSource.Should().Contain("- OAuth2");
+        generatedSource.Should().Contain("application/x-www-form-urlencoded");
+        generatedSource.Should().Contain("security: []");
+        // Form fields from the command type
+        generatedSource.Should().Contain("realmId");
+        generatedSource.Should().Contain("clientId");
+        generatedSource.Should().Contain("refreshToken");
+        // Nullable fields still present as properties but not required
+        generatedSource.Should().Contain("clientSecret");
+        generatedSource.Should().Contain("scope");
+    }
+
+    [Fact]
+    public void Generator_WithoutAccepts_DefaultsToApplicationJson()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public sealed record CreateItemCommand(string Name, string Description);
+public sealed record CreateItemResponse(string Id);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<CreateItemCommand, CreateItemResponse>(
+            ""/v1/items"", ctx => new CreateItemCommand("""", """"));
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — default should be application/json with $ref
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("application/json:");
+        generatedSource.Should().Contain("$ref: \"\"#/components/schemas/CreateItemCommand\"\"");
+    }
+
+    // ── Accepts (attribute-based) ───────────────────────────────────
+
+    [Fact]
+    public void Generator_AcceptsAttribute_UsesFormContentType()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var attributeSource = GeneratorTestHelper.CreateAttributeSource();
+        var sourceCode = routeBuilderSource + attributeSource + @"
+
+using NativeLambdaRouter.OpenApi.Attributes;
+
+namespace TestApp;
+
+[Accepts(""application/x-www-form-urlencoded"")]
+public sealed record LoginCommand(string Username, string Password);
+public sealed record LoginResponse(string Token);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<LoginCommand, LoginResponse>(""/v1/login"", ctx => new LoginCommand("""", """"))
+            .AllowAnonymous();
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("application/x-www-form-urlencoded");
+        generatedSource.Should().Contain("username");
+        generatedSource.Should().Contain("password");
+    }
+
+    [Fact]
+    public void Generator_AcceptsFluentChain_OverridesAttribute()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var attributeSource = GeneratorTestHelper.CreateAttributeSource();
+        var sourceCode = routeBuilderSource + attributeSource + @"
+
+using NativeLambdaRouter.OpenApi.Attributes;
+
+namespace TestApp;
+
+[Accepts(""application/json"")]
+public sealed record LoginCommand(string Username, string Password);
+public sealed record LoginResponse(string Token);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<LoginCommand, LoginResponse>(""/v1/login"", ctx => new LoginCommand("""", """"))
+            .Accepts(""application/x-www-form-urlencoded"")
+            .AllowAnonymous();
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — fluent chain should win
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("application/x-www-form-urlencoded");
     }
 }

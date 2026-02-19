@@ -297,6 +297,10 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
                 case "WithTags":
                     ExtractTagsArguments(parentInvocation, endpoint);
                     break;
+
+                case "Accepts":
+                    endpoint.AcceptsContentType = ExtractFirstStringArgument(parentInvocation);
+                    break;
             }
 
             current = parentInvocation;
@@ -494,6 +498,11 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
                                 endpoint.Tags.Add(tag);
                         }
                     }
+                    break;
+
+                case "AcceptsAttribute" when endpoint.AcceptsContentType == null:
+                    if (attr.ConstructorArguments.Length > 0 && attr.ConstructorArguments[0].Value is string accepts)
+                        endpoint.AcceptsContentType = accepts;
                     break;
             }
         }

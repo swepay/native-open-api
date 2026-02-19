@@ -113,6 +113,7 @@ public interface IRouteEndpointBuilder
     IRouteEndpointBuilder WithSummary(string summary);
     IRouteEndpointBuilder WithDescription(string description);
     IRouteEndpointBuilder WithTags(params string[] tags);
+    IRouteEndpointBuilder Accepts(string contentType);
     IRouteEndpointBuilder WithHeader(string name, string value);
     IRouteEndpointBuilder RequireRole(params string[] roles);
 }
@@ -163,6 +164,13 @@ public sealed class TagsAttribute : System.Attribute
 {
     public string[] Tags { get; }
     public TagsAttribute(params string[] tags) => Tags = tags;
+}
+
+[System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Method)]
+public sealed class AcceptsAttribute : System.Attribute
+{
+    public string ContentType { get; }
+    public AcceptsAttribute(string contentType) => ContentType = contentType;
 }
 ";
     }

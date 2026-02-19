@@ -675,4 +675,104 @@ public sealed class OpenApiYamlGeneratorTests
             l.Trim().StartsWith("description:") && !l.Contains("Successful") && !l.Contains("type -"));
         operationDescriptions.Should().Be(0);
     }
+
+    // ── Accepts / Form-encoded ──────────────────────────────────────
+
+    [Fact]
+    public void Generate_WithFormUrlEncodedAccepts_UsesFormContentType()
+    {
+        // Arrange
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "POST",
+                Path = "/v1/token",
+                CommandTypeName = "TestApp.TokenCommand",
+                ResponseTypeName = "TestApp.TokenResponse",
+                CommandSimpleName = "TokenCommand",
+                ResponseSimpleName = "TokenResponse",
+                AcceptsContentType = "application/x-www-form-urlencoded",
+                RequiresAuth = false,
+                CommandPropertiesResolved = true,
+                CommandProperties = new List<SchemaPropertyInfo>
+                {
+                    new() { Name = "ClientId", JsonName = "clientId", OpenApiType = "string", IsRequired = true },
+                    new() { Name = "GrantType", JsonName = "grantType", OpenApiType = "string", IsRequired = true },
+                    new() { Name = "Scope", JsonName = "scope", OpenApiType = "string", IsRequired = false }
+                }
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+
+        // Assert
+        yaml.Should().Contain("application/x-www-form-urlencoded:");
+        yaml.Should().Contain("clientId:");
+        yaml.Should().Contain("grantType:");
+        yaml.Should().Contain("scope:");
+        yaml.Should().Contain("type: object");
+        // Required fields
+        yaml.Should().Contain("- clientId");
+        yaml.Should().Contain("- grantType");
+        // scope is not required
+        yaml.Should().NotContain("- scope");
+        // No $ref for the command in requestBody
+        yaml.Should().NotContain("$ref: \"#/components/schemas/TokenCommand\"");
+    }
+
+    [Fact]
+    public void Generate_WithFormUrlEncodedUnresolved_EmitsDescriptionFallback()
+    {
+        // Arrange
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "POST",
+                Path = "/v1/token",
+                CommandTypeName = "TestApp.TokenCommand",
+                ResponseTypeName = "TestApp.TokenResponse",
+                CommandSimpleName = "TokenCommand",
+                ResponseSimpleName = "TokenResponse",
+                AcceptsContentType = "application/x-www-form-urlencoded",
+                RequiresAuth = false,
+                CommandPropertiesResolved = false
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+
+        // Assert — fallback when properties can't be resolved
+        yaml.Should().Contain("application/x-www-form-urlencoded:");
+        yaml.Should().Contain("type: object");
+        yaml.Should().Contain("TokenCommand form fields");
+    }
+
+    [Fact]
+    public void Generate_WithoutAccepts_DefaultsToJsonRef()
+    {
+        // Arrange
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "POST",
+                Path = "/v1/items",
+                CommandTypeName = "TestApp.CreateItemCommand",
+                ResponseTypeName = "TestApp.CreateItemResponse",
+                CommandSimpleName = "CreateItemCommand",
+                ResponseSimpleName = "CreateItemResponse"
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+
+        // Assert — default JSON with $ref
+        yaml.Should().Contain("application/json:");
+        yaml.Should().Contain("$ref: \"#/components/schemas/CreateItemCommand\"");
+    }
 }

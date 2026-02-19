@@ -97,12 +97,23 @@ internal static class OpenApiYamlGenerator
                 // Request body for POST, PUT, PATCH
                 if (endpoint.Method is "POST" or "PUT" or "PATCH")
                 {
+                    var requestContentType = endpoint.AcceptsContentType ?? "application/json";
+
                     sb.AppendLine("      requestBody:");
                     sb.AppendLine("        required: true");
                     sb.AppendLine("        content:");
-                    sb.AppendLine("          application/json:");
+                    sb.AppendLine($"          {requestContentType}:");
                     sb.AppendLine("            schema:");
-                    sb.AppendLine($"              $ref: \"#/components/schemas/{endpoint.CommandSimpleName}\"");
+
+                    if (requestContentType == "application/x-www-form-urlencoded")
+                    {
+                        // Form-encoded endpoints: emit inline schema with string properties
+                        AppendFormEncodedSchema(sb, endpoint);
+                    }
+                    else
+                    {
+                        sb.AppendLine($"              $ref: \"#/components/schemas/{endpoint.CommandSimpleName}\"");
+                    }
                 }
 
                 // Responses
@@ -309,6 +320,41 @@ internal static class OpenApiYamlGenerator
     private static string EscapeYamlString(string value)
     {
         return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    }
+
+    /// <summary>
+    /// Appends an inline object schema for application/x-www-form-urlencoded request bodies.
+    /// When properties are resolved from the Command type, emits each property as a form field.
+    /// Properties from form-encoded bodies are always typed as <c>string</c> since HTTP forms
+    /// transmit everything as text. Nullable properties are excluded from <c>required</c>.
+    /// </summary>
+    private static void AppendFormEncodedSchema(StringBuilder sb, EndpointInfo endpoint)
+    {
+        sb.AppendLine("              type: object");
+
+        if (endpoint.CommandPropertiesResolved && endpoint.CommandProperties.Count > 0)
+        {
+            sb.AppendLine("              properties:");
+            foreach (var prop in endpoint.CommandProperties)
+            {
+                sb.AppendLine($"                {prop.JsonName}:");
+                sb.AppendLine("                  type: string");
+            }
+
+            var requiredProps = endpoint.CommandProperties.Where(p => p.IsRequired).ToList();
+            if (requiredProps.Count > 0)
+            {
+                sb.AppendLine("              required:");
+                foreach (var prop in requiredProps)
+                {
+                    sb.AppendLine($"                - {prop.JsonName}");
+                }
+            }
+        }
+        else
+        {
+            sb.AppendLine($"              description: \"{endpoint.CommandSimpleName} form fields\"");
+        }
     }
 
     private static string GetStatusCodeDescription(int statusCode)

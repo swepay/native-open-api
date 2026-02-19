@@ -168,6 +168,7 @@ routes.MapGet<GetClientsCommand, GetClientsResponse>("/v1/clients", ctx => new G
 | `.WithSummary("text")` | Sets `summary` in the YAML |
 | `.WithDescription("text")` | Adds `description` field to the operation |
 | `.WithTags("A", "B")` | Overrides auto-generated `tags` |
+| `.Accepts("contentType")` | Sets the request body content type (default: `application/json`) |
 | `.Produces<T>(statusCode)` | Adds a typed response with `$ref` to schema |
 | `.ProducesProblem(statusCode)` | Adds a `application/problem+json` error response |
 
@@ -191,6 +192,7 @@ public class GetClientsCommand { }
 | `[EndpointSummary("text")]` | `.WithSummary("text")` |
 | `[EndpointDescription("text")]` | `.WithDescription("text")` |
 | `[Tags("A", "B")]` | `.WithTags("A", "B")` |
+| `[Accepts("contentType")]` | `.Accepts("contentType")` |
 
 ### Precedence
 
@@ -247,6 +249,67 @@ responses:
 ```
 
 > **Note:** When `.ProducesProblem(statusCode)` overlaps with a default error response (400, 401, 500), the custom `application/problem+json` response **replaces** the default `$ref` — no duplicates.
+
+### Form-Encoded Request Bodies (v1.5.1+)
+
+Use `.Accepts("application/x-www-form-urlencoded")` for endpoints that receive form data instead of JSON (e.g., OAuth2 token endpoints):
+
+```csharp
+routes.MapPost<RefreshTokenCommand, TokenResponse>(
+    "/v1/realms/{realm}/protocol/openid-connect/refresh",
+    ctx => new RefreshTokenCommand(...))
+    .WithName("RefreshToken")
+    .WithSummary("Refresh token endpoint")
+    .WithTags("OAuth2")
+    .Accepts("application/x-www-form-urlencoded")
+    .ProducesProblem(400)
+    .ProducesProblem(401)
+    .AllowAnonymous();
+```
+
+Or via attribute on the TCommand:
+
+```csharp
+[Accepts("application/x-www-form-urlencoded")]
+public sealed record RefreshTokenCommand(
+    string RealmId,
+    string ClientId,
+    string RefreshToken,
+    string? ClientSecret,
+    string? Scope);
+```
+
+Generates an inline form schema instead of `$ref`:
+
+```yaml
+requestBody:
+  required: true
+  content:
+    application/x-www-form-urlencoded:
+      schema:
+        type: object
+        properties:
+          realmId:
+            type: string
+          clientId:
+            type: string
+          refreshToken:
+            type: string
+          clientSecret:
+            type: string
+          scope:
+            type: string
+        required:
+          - realmId
+          - clientId
+          - refreshToken
+```
+
+> **Key differences from JSON request bodies:**
+> - Content type is `application/x-www-form-urlencoded` instead of `application/json`
+> - Schema is emitted **inline** (not via `$ref`), since form fields are always strings
+> - All properties are typed as `type: string` (HTTP forms transmit everything as text)
+> - Nullable properties are excluded from the `required` array
 
 ## Schema Property Generation
 
