@@ -2,6 +2,67 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.0] - 2026-02-22
+
+### Added
+- **Native.OpenApi**: New `ApiResponseAttribute` for documenting HTTP responses directly on handler methods. This attribute can be applied multiple times to specify different response types with status codes, response types, and content types.
+- **Source Generator**: Automatic detection of `[ApiResponse]` attributes on handler methods (`IRequestHandler<TCommand, TResponse>.Handle`). The generator now scans all handler implementations in the assembly and extracts response documentation, merging it into the generated OpenAPI specification.
+- **Source Generator**: New `ApplyHandlerApiResponseAttributes()` method that finds handlers for each command type and reads `[ApiResponse]` attributes from their `Handle` methods.
+- **Source Generator**: New `ExtractApiResponseAttributes()` helper method to parse `[ApiResponse]` attribute data and convert to `ProducesInfo` entries.
+- **Source Generator**: New `GetAllTypes()` recursive helper to enumerate all types in an assembly, including nested types, for handler discovery.
+- **Tests**: 4 new Source Generator tests for `[ApiResponse]` attribute detection: basic multi-response scenario, different content types, multiple handlers with correct handler matching, and attribute parsing validation.
+- **Tests**: New `ApiResponseAttributeTests` test suite with 10 tests covering constructor parameters, defaults, attribute usage metadata, multiple attributes, and various status code scenarios.
+- **Sample**: Updated `SampleApiFunction` handlers to demonstrate `[ApiResponse]` usage with `ErrorResponse` and `ProblemDetails` types.
+- **Documentation**: Added comprehensive `ApiResponse Attribute` section to `Native.OpenApi/README.md` with usage examples, parameter documentation, and complete handler examples.
+- **Documentation**: Added `Handler-Based Response Attributes (v1.6.0+)` section to `NativeLambdaRouter.SourceGenerator.OpenApi/README.md` explaining the new handler-based approach and its benefits.
+
+### Removed
+- **Source Generator**: ❌ **BREAKING** - Removed support for `.Produces<T>(statusCode)` and `.Produces(statusCode, contentType)` fluent chain methods. Use `[ApiResponse]` attributes on handler methods instead for documenting typed responses. The `.ProducesProblem(statusCode)` method remains supported for problem+json error responses.
+- **Source Generator**: Removed `ApplyGenericProduces()` and `ApplyNonGenericProduces()` methods.
+- **Documentation**: Removed all references to `.Produces<T>()` from README files.
+
+### Changed
+- **Native.OpenApi**: Added project reference to `Native.OpenApi` in sample projects to enable `[ApiResponse]` attribute usage.
+- **Sample Models**: Added `ErrorResponse` and `ProblemDetails` record types to `SampleApiFunction/Responses.cs` for demonstration purposes.
+- **ProducesInfo**: Updated class documentation to reflect that responses come from `.ProducesProblem()` or `[ApiResponse]` attributes.
+- **EndpointInfo**: Updated `AdditionalProduces` property documentation.
+
+### Migration Guide
+
+**Before (v1.5.x):**
+```csharp
+routes.MapGet<GetItemCommand, GetItemResponse>("/v1/items/{id}", ctx => new GetItemCommand(ctx.PathParameters["id"]))
+    .Produces<NotFoundError>(404)
+    .Produces<ErrorResponse>(400);
+```
+
+**After (v1.6.0):**
+```csharp
+// In your handler:
+public class GetItemHandler : IRequestHandler<GetItemCommand, GetItemResponse>
+{
+    [ApiResponse(200, typeof(GetItemResponse))]
+    [ApiResponse(404, typeof(NotFoundError))]
+    [ApiResponse(400, typeof(ErrorResponse))]
+    public ValueTask<GetItemResponse> Handle(GetItemCommand request, CancellationToken cancellationToken)
+    {
+        // ... implementation
+    }
+}
+```
+
+**Why this change?**
+- Co-located documentation (responses defined next to handler logic)
+- Better type safety at compile time
+- Follows Swashbuckle/ASP.NET Core conventions
+- Avoids naming conflict with `NativeLambdaRouter.Produces()`
+
+### Technical Details
+- The `[ApiResponse]` attribute follows Swashbuckle naming conventions for familiarity with existing .NET tooling.
+- Handler discovery uses Roslyn's semantic model to find `IRequestHandler<TCommand, TResponse>` implementations and match them with routed endpoints.
+- Response definitions from `[ApiResponse]` attributes are merged with fluent chain `.ProducesProblem()` calls, providing complementary documentation approaches.
+- The attribute is AOT-compatible and generates no runtime overhead — all processing happens at compile time via the Source Generator.
+
 ## [1.5.1] - 2026-02-19
 
 ### Added

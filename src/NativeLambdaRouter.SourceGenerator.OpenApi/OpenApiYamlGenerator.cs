@@ -118,13 +118,21 @@ internal static class OpenApiYamlGenerator
 
                 // Responses
                 sb.AppendLine("      responses:");
-                sb.AppendLine("        \"200\":");
-                sb.AppendLine($"          description: \"Successful response\"");
-                var contentType = endpoint.ProducesContentType ?? "application/json";
-                sb.AppendLine("          content:");
-                sb.AppendLine($"            {contentType}:");
-                sb.AppendLine("              schema:");
-                sb.AppendLine($"                $ref: \"#/components/schemas/{endpoint.ResponseSimpleName}\"");
+                
+                // Check if there's already a 200 response in AdditionalProduces
+                var has200Response = endpoint.AdditionalProduces.Any(p => p.StatusCode == 200);
+                
+                if (!has200Response)
+                {
+                    // Only emit the default 200 response if not already defined
+                    sb.AppendLine("        \"200\":");
+                    sb.AppendLine($"          description: \"Successful response\"");
+                    var contentType = endpoint.ProducesContentType ?? "application/json";
+                    sb.AppendLine("          content:");
+                    sb.AppendLine($"            {contentType}:");
+                    sb.AppendLine("              schema:");
+                    sb.AppendLine($"                $ref: \"#/components/schemas/{endpoint.ResponseSimpleName}\"");
+                }
 
                 // Additional .Produces<T>() / .ProducesProblem() responses
                 foreach (var produces in endpoint.AdditionalProduces)

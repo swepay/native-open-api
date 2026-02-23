@@ -1,7 +1,7 @@
 namespace NativeLambdaRouter.SourceGenerator.OpenApi;
 
 /// <summary>
-/// Represents a response definition from .Produces() or .ProducesProblem() fluent calls.
+/// Represents a response definition from .ProducesProblem() fluent calls or [ApiResponse] attributes.
 /// </summary>
 internal sealed class ProducesInfo
 {

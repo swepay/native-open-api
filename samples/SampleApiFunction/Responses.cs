@@ -13,3 +13,12 @@ public sealed record DeleteItemResponse(string Id, string Message);
 public sealed record HealthCheckResponse(string Status, string Timestamp);
 
 public sealed record ItemDto(string Id, string Name, string Description, decimal Price);
+
+public sealed record ErrorResponse(string Message, string? Details = null);
+
+public sealed record ProblemDetails(
+    string Type,
+    string Title,
+    int Status,
+    string? Detail = null,
+    string? Instance = null);

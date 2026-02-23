@@ -587,74 +587,6 @@ public class MyRouter
     }
 
     [Fact]
-    public void Generator_WithProduces_UsesCustomContentType()
-    {
-        // Arrange
-        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
-        var sourceCode = routeBuilderSource + @"
-
-namespace TestApp;
-
-public class GetDocsCommand { }
-public class GetDocsResponse { }
-
-public class MyRouter
-{
-    protected void ConfigureRoutes(IRouteBuilder routes)
-    {
-        routes.MapGet<GetDocsCommand, GetDocsResponse>(""/v1/docs"", ctx => new GetDocsCommand())
-            .Produces(""text/html"");
-    }
-}
-";
-
-        // Act
-        var result = GeneratorTestHelper.RunGenerator(sourceCode);
-        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
-
-        // Assert — The YAML should use text/html instead of application/json
-        generatedSource.Should().NotBeNull();
-        generatedSource.Should().Contain("text/html");
-        generatedSource.Should().NotContain("application/json");
-    }
-
-    [Fact]
-    public void Generator_WithAllowAnonymousAndProduces_AppliesBoth()
-    {
-        // Arrange
-        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
-        var sourceCode = routeBuilderSource + @"
-
-namespace TestApp;
-
-public class GetOpenApiCommand { }
-public class GetOpenApiResponse { }
-
-public class MyRouter
-{
-    protected void ConfigureRoutes(IRouteBuilder routes)
-    {
-        routes.MapGet<GetOpenApiCommand, GetOpenApiResponse>(""/v1/openapi"", ctx => new GetOpenApiCommand())
-            .AllowAnonymous()
-            .Produces(""text/html"");
-    }
-}
-";
-
-        // Act
-        var result = GeneratorTestHelper.RunGenerator(sourceCode);
-        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
-
-        // Assert — security: [] for anonymous AND custom content type
-        generatedSource.Should().NotBeNull();
-        generatedSource.Should().Contain("/v1/openapi");
-        generatedSource.Should().Contain("security: []");
-        generatedSource.Should().NotContain("JwtBearer");
-        generatedSource.Should().Contain("text/html");
-        generatedSource.Should().NotContain("application/json");
-    }
-
-    [Fact]
     public void Generator_MixedEndpoints_AuthAndAnonymous_GeneratesCorrectSecurity()
     {
         // Arrange
@@ -1128,5 +1060,241 @@ public class MyRouter
 
         // permissionIds should be array
         generatedSource.Should().Contain("type: array");
+    }
+
+    [Fact]
+    public void Generator_WithApiResponseAttribute_ShouldIncludeInSpec()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace Native.OpenApi;
+
+[System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple = true)]
+public sealed class ApiResponseAttribute : System.Attribute
+{
+    public int StatusCode { get; }
+    public System.Type? ResponseType { get; }
+    public string ContentType { get; }
+    
+    public ApiResponseAttribute(int statusCode, System.Type? responseType = null, string contentType = ""application/json"")
+    {
+        StatusCode = statusCode;
+        ResponseType = responseType;
+        ContentType = contentType;
+    }
+}
+
+namespace NativeMediator;
+
+public interface IRequestHandler<TRequest, TResponse>
+{
+    System.Threading.Tasks.ValueTask<TResponse> Handle(TRequest request, System.Threading.CancellationToken cancellationToken);
+}
+
+namespace TestApp;
+
+public class GetItemCommand { }
+public class GetItemResponse 
+{
+    public string Id { get; set; } = """";
+    public string Name { get; set; } = """";
+}
+public class ErrorResponse 
+{
+    public string Message { get; set; } = """";
+}
+
+public class GetItemHandler : NativeMediator.IRequestHandler<GetItemCommand, GetItemResponse>
+{
+    [Native.OpenApi.ApiResponse(200, typeof(GetItemResponse))]
+    [Native.OpenApi.ApiResponse(404, typeof(ErrorResponse))]
+    [Native.OpenApi.ApiResponse(500)]
+    public System.Threading.Tasks.ValueTask<GetItemResponse> Handle(GetItemCommand request, System.Threading.CancellationToken cancellationToken)
+    {
+        return new System.Threading.Tasks.ValueTask<GetItemResponse>(new GetItemResponse());
+    }
+}
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemCommand, GetItemResponse>(""/v1/items/{id}"", ctx => new GetItemCommand());
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        
+        // Should include all response status codes
+        generatedSource.Should().Contain("\"\"200\"\":");
+        generatedSource.Should().Contain("\"\"404\"\":");
+        generatedSource.Should().Contain("\"\"500\"\":");
+        
+        // Should reference the response types
+        generatedSource.Should().Contain("GetItemResponse");
+        generatedSource.Should().Contain("ErrorResponse");
+    }
+
+    [Fact]
+    public void Generator_WithApiResponseAttribute_DifferentContentTypes_ShouldRespectContentType()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace Native.OpenApi;
+
+[System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple = true)]
+public sealed class ApiResponseAttribute : System.Attribute
+{
+    public int StatusCode { get; }
+    public System.Type? ResponseType { get; }
+    public string ContentType { get; }
+    
+    public ApiResponseAttribute(int statusCode, System.Type? responseType = null, string contentType = ""application/json"")
+    {
+        StatusCode = statusCode;
+        ResponseType = responseType;
+        ContentType = contentType;
+    }
+}
+
+namespace NativeMediator;
+
+public interface IRequestHandler<TRequest, TResponse>
+{
+    System.Threading.Tasks.ValueTask<TResponse> Handle(TRequest request, System.Threading.CancellationToken cancellationToken);
+}
+
+namespace TestApp;
+
+public class GetItemCommand { }
+public class GetItemResponse { }
+public class ProblemDetails 
+{
+    public string Title { get; set; } = """";
+}
+
+public class GetItemHandler : NativeMediator.IRequestHandler<GetItemCommand, GetItemResponse>
+{
+    [Native.OpenApi.ApiResponse(200, typeof(GetItemResponse), ""application/json"")]
+    [Native.OpenApi.ApiResponse(400, typeof(ProblemDetails), ""application/problem+json"")]
+    public System.Threading.Tasks.ValueTask<GetItemResponse> Handle(GetItemCommand request, System.Threading.CancellationToken cancellationToken)
+    {
+        return new System.Threading.Tasks.ValueTask<GetItemResponse>(new GetItemResponse());
+    }
+}
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemCommand, GetItemResponse>(""/v1/items"", ctx => new GetItemCommand());
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        
+        // Should include both content types
+        generatedSource.Should().Contain("application/json");
+        generatedSource.Should().Contain("application/problem+json");
+    }
+
+    [Fact]
+    public void Generator_WithMultipleHandlers_ShouldFindCorrectHandler()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace Native.OpenApi;
+
+[System.AttributeUsage(System.AttributeTargets.Method, AllowMultiple = true)]
+public sealed class ApiResponseAttribute : System.Attribute
+{
+    public int StatusCode { get; }
+    public System.Type? ResponseType { get; }
+    public string ContentType { get; }
+    
+    public ApiResponseAttribute(int statusCode, System.Type? responseType = null, string contentType = ""application/json"")
+    {
+        StatusCode = statusCode;
+        ResponseType = responseType;
+        ContentType = contentType;
+    }
+}
+
+namespace NativeMediator;
+
+public interface IRequestHandler<TRequest, TResponse>
+{
+    System.Threading.Tasks.ValueTask<TResponse> Handle(TRequest request, System.Threading.CancellationToken cancellationToken);
+}
+
+namespace TestApp;
+
+public class GetItemCommand { }
+public class GetItemResponse { }
+public class CreateItemCommand { }
+public class CreateItemResponse { }
+
+public class GetItemHandler : NativeMediator.IRequestHandler<GetItemCommand, GetItemResponse>
+{
+    [Native.OpenApi.ApiResponse(200, typeof(GetItemResponse))]
+    [Native.OpenApi.ApiResponse(404)]
+    public System.Threading.Tasks.ValueTask<GetItemResponse> Handle(GetItemCommand request, System.Threading.CancellationToken cancellationToken)
+    {
+        return new System.Threading.Tasks.ValueTask<GetItemResponse>(new GetItemResponse());
+    }
+}
+
+public class CreateItemHandler : NativeMediator.IRequestHandler<CreateItemCommand, CreateItemResponse>
+{
+    [Native.OpenApi.ApiResponse(201, typeof(CreateItemResponse))]
+    [Native.OpenApi.ApiResponse(400)]
+    public System.Threading.Tasks.ValueTask<CreateItemResponse> Handle(CreateItemCommand request, System.Threading.CancellationToken cancellationToken)
+    {
+        return new System.Threading.Tasks.ValueTask<CreateItemResponse>(new CreateItemResponse());
+    }
+}
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemCommand, GetItemResponse>(""/v1/items/{id}"", ctx => new GetItemCommand());
+        routes.MapPost<CreateItemCommand, CreateItemResponse>(""/v1/items"", ctx => new CreateItemCommand());
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        
+        // GET endpoint should have 200 and 404
+        generatedSource.Should().Contain("\"\"200\"\":");
+        generatedSource.Should().Contain("\"\"404\"\":");
+        
+        // POST endpoint should have 201 and 400
+        generatedSource.Should().Contain("\"\"201\"\":");
+        generatedSource.Should().Contain("\"\"400\"\":");
     }
 }

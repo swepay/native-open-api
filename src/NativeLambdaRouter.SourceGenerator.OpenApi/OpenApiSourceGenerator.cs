@@ -196,11 +196,14 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         // Extract type properties for schema generation
         ExtractTypeProperties(commandType, responseType, endpoint);
 
-        // Detect fluent chain options (.AllowAnonymous(), .Produces(...), .WithName(), etc.)
+        // Detect fluent chain options (.AllowAnonymous(), .ProducesProblem(...), .WithName(), etc.)
         ApplyFluentChainOptions(invocation, endpoint);
 
         // Read metadata attributes from TCommand type ([EndpointName], [Tags], etc.)
         ApplyCommandAttributes(commandType, endpoint);
+
+        // Read ApiResponse attributes from handler method
+        ApplyHandlerApiResponseAttributes(commandType, responseType, endpoint);
 
         return endpoint;
     }
@@ -234,15 +237,15 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
 
     /// <summary>
     /// Walks up the syntax tree from a Map* invocation to detect fluent chain calls
-    /// such as .AllowAnonymous(), .Produces("text/html"), .WithName(), .WithDescription(),
-    /// .WithSummary(), .WithTags(), .Produces&lt;T&gt;(statusCode), and .ProducesProblem(statusCode).
+    /// such as .AllowAnonymous(), .WithName(), .WithDescription(),
+    /// .WithSummary(), .WithTags(), and .ProducesProblem(statusCode).
     /// </summary>
     private static void ApplyFluentChainOptions(InvocationExpressionSyntax mapInvocation, EndpointInfo endpoint)
     {
         // In the Roslyn AST, a fluent chain like:
-        //   routes.MapGet<Cmd, Rsp>("/path", ctx => new Cmd()).AllowAnonymous().Produces("text/html")
+        //   routes.MapGet<Cmd, Rsp>("/path", ctx => new Cmd()).AllowAnonymous().ProducesProblem(500)
         // is represented as nested InvocationExpressions:
-        //   Produces( AllowAnonymous( MapGet(...) ) )
+        //   ProducesProblem( AllowAnonymous( MapGet(...) ) )
         //
         // The MapGet invocation is the Expression inside the MemberAccess of AllowAnonymous(),
         // and AllowAnonymous() is the Expression inside the MemberAccess of Produces().
@@ -267,19 +270,12 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
                     endpoint.RequiresAuth = false;
                     break;
 
-                case "Produces" when parentMemberAccess.Name is GenericNameSyntax gn:
-                    // .Produces<TResponse>(statusCode, contentType)
-                    ApplyGenericProduces(parentInvocation, gn, endpoint);
+                case "ProducesProblem":
+                    ApplyProducesProblem(parentInvocation, endpoint);
                     break;
 
                 case "Produces":
-                    // .Produces("contentType") — legacy overload that sets the success content type
-                    // or .Produces(statusCode) / .Produces(statusCode, contentType) — non-generic
-                    ApplyNonGenericProduces(parentInvocation, endpoint);
-                    break;
-
-                case "ProducesProblem":
-                    ApplyProducesProblem(parentInvocation, endpoint);
+                    ApplyProduces(parentInvocation, endpoint);
                     break;
 
                 case "WithName":
@@ -308,82 +304,6 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Handles .Produces&lt;TResponse&gt;(statusCode, contentType) — generic overload.
-    /// </summary>
-    private static void ApplyGenericProduces(
-        InvocationExpressionSyntax invocation,
-        GenericNameSyntax genericName,
-        EndpointInfo endpoint)
-    {
-        var typeArgs = genericName.TypeArgumentList.Arguments;
-        string? typeName = typeArgs.Count > 0 ? typeArgs[0].ToString() : null;
-        // Extract simple name from potentially qualified type
-        if (typeName != null && typeName.Contains("."))
-        {
-            typeName = typeName.Substring(typeName.LastIndexOf('.') + 1);
-        }
-
-        var args = invocation.ArgumentList.Arguments;
-        var statusCode = 200;
-        var contentType = "application/json";
-
-        if (args.Count > 0)
-        {
-            statusCode = ExtractIntArgument(args[0]) ?? 200;
-        }
-        if (args.Count > 1)
-        {
-            var ct = ExtractStringArgument(args[1]);
-            if (ct != null) contentType = ct;
-        }
-
-        endpoint.AdditionalProduces.Add(new ProducesInfo
-        {
-            StatusCode = statusCode,
-            ResponseTypeSimpleName = typeName,
-            ContentType = contentType
-        });
-    }
-
-    /// <summary>
-    /// Handles non-generic .Produces() calls.
-    /// Legacy: .Produces("contentType") sets the success content type.
-    /// New: .Produces(statusCode) or .Produces(statusCode, contentType).
-    /// </summary>
-    private static void ApplyNonGenericProduces(InvocationExpressionSyntax invocation, EndpointInfo endpoint)
-    {
-        var args = invocation.ArgumentList.Arguments;
-        if (args.Count == 0) return;
-
-        var firstArg = args[0].Expression;
-
-        // Legacy: .Produces("text/html") — string argument → sets success content type
-        if (firstArg is LiteralExpressionSyntax literal
-            && literal.Token.IsKind(SyntaxKind.StringLiteralToken))
-        {
-            endpoint.ProducesContentType = literal.Token.ValueText;
-            return;
-        }
-
-        // New: .Produces(statusCode) or .Produces(statusCode, contentType)
-        var statusCode = ExtractIntArgument(args[0]);
-        if (statusCode == null) return;
-
-        string? contentType = null;
-        if (args.Count > 1)
-        {
-            contentType = ExtractStringArgument(args[1]);
-        }
-
-        endpoint.AdditionalProduces.Add(new ProducesInfo
-        {
-            StatusCode = statusCode.Value,
-            ResponseTypeSimpleName = null,
-            ContentType = contentType ?? "application/json"
-        });
-    }
-
-    /// <summary>
     /// Handles .ProducesProblem(statusCode, contentType).
     /// </summary>
     private static void ApplyProducesProblem(InvocationExpressionSyntax invocation, EndpointInfo endpoint)
@@ -405,6 +325,22 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
             ResponseTypeSimpleName = null,
             ContentType = contentType
         });
+    }
+
+    /// <summary>
+    /// Handles .Produces(contentType) or .Produces<T>(contentType).
+    /// Sets the content type for the default 200 response.
+    /// </summary>
+    private static void ApplyProduces(InvocationExpressionSyntax invocation, EndpointInfo endpoint)
+    {
+        var args = invocation.ArgumentList.Arguments;
+        if (args.Count == 0) return;
+
+        var contentType = ExtractStringArgument(args[0]);
+        if (!string.IsNullOrEmpty(contentType))
+        {
+            endpoint.ProducesContentType = contentType;
+        }
     }
 
     /// <summary>
@@ -504,6 +440,121 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
                     if (attr.ConstructorArguments.Length > 0 && attr.ConstructorArguments[0].Value is string accepts)
                         endpoint.AcceptsContentType = accepts;
                     break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Finds the handler for the given command and response types, and extracts [ApiResponse] attributes
+    /// from the Handle method to populate AdditionalProduces.
+    /// </summary>
+    private static void ApplyHandlerApiResponseAttributes(ITypeSymbol commandType, ITypeSymbol responseType, EndpointInfo endpoint)
+    {
+        // Find all types in the compilation
+        var allTypes = GetAllTypes(commandType.ContainingAssembly);
+
+        // Look for a type that implements IRequestHandler<TCommand, TResponse>
+        foreach (var type in allTypes)
+        {
+            if (type.TypeKind != TypeKind.Class)
+                continue;
+
+            // Check if this type implements IRequestHandler<TCommand, TResponse>
+            foreach (var iface in type.AllInterfaces)
+            {
+                if (iface.Name != "IRequestHandler" || iface.TypeArguments.Length != 2)
+                    continue;
+
+                var handlerCommandType = iface.TypeArguments[0];
+                var handlerResponseType = iface.TypeArguments[1];
+
+                // Check if the types match
+                if (SymbolEqualityComparer.Default.Equals(handlerCommandType, commandType) &&
+                    SymbolEqualityComparer.Default.Equals(handlerResponseType, responseType))
+                {
+                    // Found the handler! Now look for the Handle method
+                    var handleMethod = type.GetMembers("Handle")
+                        .OfType<IMethodSymbol>()
+                        .FirstOrDefault();
+
+                    if (handleMethod != null)
+                    {
+                        ExtractApiResponseAttributes(handleMethod, endpoint);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Extracts [ApiResponse] attributes from a method and adds them to the endpoint's AdditionalProduces.
+    /// </summary>
+    private static void ExtractApiResponseAttributes(IMethodSymbol method, EndpointInfo endpoint)
+    {
+        foreach (var attr in method.GetAttributes())
+        {
+            var attrName = attr.AttributeClass?.Name;
+            if (attrName is not ("ApiResponseAttribute" or "ProducesAttribute"))
+                continue;
+
+            // Extract status code (required)
+            if (attr.ConstructorArguments.Length == 0)
+                continue;
+
+            if (attr.ConstructorArguments[0].Value is not int statusCode)
+                continue;
+
+            // Extract response type (optional, 2nd parameter)
+            string? responseTypeName = null;
+            if (attr.ConstructorArguments.Length > 1 && attr.ConstructorArguments[1].Value is INamedTypeSymbol responseTypeSymbol)
+            {
+                responseTypeName = responseTypeSymbol.Name;
+            }
+
+            // Extract content type (optional, 3rd parameter, defaults to "application/json")
+            string contentType = "application/json";
+            if (attr.ConstructorArguments.Length > 2 && attr.ConstructorArguments[2].Value is string ct)
+            {
+                contentType = ct;
+            }
+
+            endpoint.AdditionalProduces.Add(new ProducesInfo
+            {
+                StatusCode = statusCode,
+                ResponseTypeSimpleName = responseTypeName,
+                ContentType = contentType
+            });
+        }
+    }
+
+    /// <summary>
+    /// Recursively gets all types from an assembly, including nested types.
+    /// </summary>
+    private static IEnumerable<INamedTypeSymbol> GetAllTypes(IAssemblySymbol assembly)
+    {
+        var stack = new Stack<INamespaceOrTypeSymbol>();
+        stack.Push(assembly.GlobalNamespace);
+
+        while (stack.Count > 0)
+        {
+            var current = stack.Pop();
+
+            if (current is INamedTypeSymbol type)
+            {
+                yield return type;
+
+                foreach (var nestedType in type.GetTypeMembers())
+                {
+                    stack.Push(nestedType);
+                }
+            }
+            else if (current is INamespaceSymbol ns)
+            {
+                foreach (var member in ns.GetMembers())
+                {
+                    stack.Push(member);
+                }
             }
         }
     }
@@ -787,13 +838,19 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
             ExtractTypeProperties(commandTypeInfo.Type, responseTypeInfo.Type, endpoint);
         }
 
-        // Detect fluent chain options (.AllowAnonymous(), .Produces(...), .WithName(), etc.)
+        // Detect fluent chain options (.AllowAnonymous(), .ProducesProblem(), .WithName(), etc.)
         ApplyFluentChainOptions(invocation, endpoint);
 
         // Read metadata attributes from TCommand type ([EndpointName], [Tags], etc.)
         if (commandTypeInfo.Type != null)
         {
             ApplyCommandAttributes(commandTypeInfo.Type, endpoint);
+
+            // Read ApiResponse attributes from handler method
+            if (responseTypeInfo.Type != null)
+            {
+                ApplyHandlerApiResponseAttributes(commandTypeInfo.Type, responseTypeInfo.Type, endpoint);
+            }
         }
 
         return endpoint;

@@ -13,7 +13,7 @@ A Roslyn Source Generator that automatically generates OpenAPI 3.1 specification
 - **Type-Safe**: Extracts request/response types from generic parameters
 - **Schema Property Introspection**: Generates real `properties` and `required` from C# record/class types
 - **Nullable-Aware**: Nullable properties are excluded from `required` arrays
-- **Metadata & Extensions**: Fluent chain methods (`.WithName()`, `.WithSummary()`, `.Produces<T>()`, etc.) and attribute-based metadata
+- **Metadata & Extensions**: Fluent chain methods (`.WithName()`, `.WithSummary()`, `.ProducesProblem()`, etc.) and attribute-based metadata, plus `[ApiResponse]` attributes on handlers
 - **OpenAPI 3.1 Compliant**: Generates valid OpenAPI 3.1 YAML specifications
 
 ## Installation
@@ -41,8 +41,7 @@ public class MyRouter : RoutedApiGatewayFunction
             .WithName("CreateItem")
             .WithDescription("Creates a new item in the catalog");
 
-        routes.MapGet<GetItemByIdCommand, GetItemByIdResponse>("/v1/items/{id}", ctx => new GetItemByIdCommand(ctx.PathParameters["id"]))
-            .Produces<NotFoundError>(404);
+        routes.MapGet<GetItemByIdCommand, GetItemByIdResponse>("/v1/items/{id}", ctx => new GetItemByIdCommand(ctx.PathParameters["id"]));
 
         routes.MapPut<UpdateItemCommand, UpdateItemResponse>("/v1/items/{id}", ctx => Deserialize<UpdateItemCommand>(ctx.Body!));
         routes.MapDelete<DeleteItemCommand, DeleteItemResponse>("/v1/items/{id}", ctx => new DeleteItemCommand(ctx.PathParameters["id"]));
@@ -142,7 +141,7 @@ For each endpoint, the generator creates:
 - **Security**: JWT Bearer authentication by default; `security: []` for anonymous endpoints (`.AllowAnonymous()`)
 - **Parameters**: Path parameters extracted from route template
 - **Request Body**: For POST, PUT, PATCH methods with schema reference
-- **Responses**: Success response with schema + standard error responses + additional responses via `.Produces<T>()` / `.ProducesProblem()`
+- **Responses**: Success response with schema + standard error responses + additional responses via `[ApiResponse]` attributes or `.ProducesProblem()`
 
 ## Metadata & Extensions (v1.5.0+)
 
@@ -158,7 +157,6 @@ routes.MapGet<GetClientsCommand, GetClientsResponse>("/v1/clients", ctx => new G
     .WithSummary("Retrieve all clients")     // custom summary
     .WithDescription("Returns a paginated list of registered clients") // description
     .WithTags("Clients", "Admin")            // custom tags (overrides auto-generated)
-    .Produces<NotFoundError>(404)            // typed additional response
     .ProducesProblem(422);                   // problem+json error response
 ```
 
@@ -169,8 +167,9 @@ routes.MapGet<GetClientsCommand, GetClientsResponse>("/v1/clients", ctx => new G
 | `.WithDescription("text")` | Adds `description` field to the operation |
 | `.WithTags("A", "B")` | Overrides auto-generated `tags` |
 | `.Accepts("contentType")` | Sets the request body content type (default: `application/json`) |
-| `.Produces<T>(statusCode)` | Adds a typed response with `$ref` to schema |
 | `.ProducesProblem(statusCode)` | Adds a `application/problem+json` error response |
+
+For additional typed responses, use the `[ApiResponse]` attribute on handler methods (see Handler-Based Response Attributes section below).
 
 ### Attribute-Based Metadata
 
@@ -208,44 +207,93 @@ routes.MapGet<ListClientsCommand, ListClientsResponse>("/v1/clients", ctx => new
     .WithTags("FluentTag");          // ← wins → tags: [FluentTag]
 ```
 
-### Additional Responses
+### Handler-Based Response Attributes (v1.6.0+)
 
-Use `.Produces<T>(statusCode)` and `.ProducesProblem(statusCode)` to define additional responses beyond the default 200/400/401/500:
+Document responses directly on handler methods using the `[ApiResponse]` attribute from the `Native.OpenApi` package:
 
 ```csharp
-routes.MapGet<GetItemCommand, GetItemResponse>("/v1/items/{id}", ctx => new GetItemCommand(ctx.PathParameters["id"]))
-    .Produces<NotFoundError>(404)    // typed response → $ref schema
-    .ProducesProblem(422);           // problem+json → generic error
+using Native.OpenApi;
+using NativeMediator;
+
+public class GetProductHandler : IRequestHandler<GetProductCommand, GetProductResponse>
+{
+    [ApiResponse(200, typeof(GetProductResponse), "application/json")]
+    [ApiResponse(404, typeof(ErrorResponse), "application/json")]
+    [ApiResponse(400, typeof(ProblemDetails), "application/problem+json")]
+    [ApiResponse(500, typeof(ProblemDetails), "application/problem+json")]
+    public ValueTask<GetProductResponse> Handle(GetProductCommand request, CancellationToken cancellationToken)
+    {
+        // ... implementation
+    }
+}
 ```
 
-Generates:
+**Benefits:**
+- **Co-located Documentation**: Response definitions live next to the handler implementation
+- **Type-Safe**: Response types are verified at compile time
+- **Automatic Discovery**: The Source Generator automatically finds handlers for each command and extracts `[ApiResponse]` attributes
+- **Complementary**: Combines with fluent chain method `.ProducesProblem()` for problem details responses
+
+**How it works:**
+1. The Source Generator finds `IRequestHandler<TCommand, TResponse>` implementations
+2. It reads `[ApiResponse]` attributes from the `Handle` method
+3. Response definitions are merged into the generated OpenAPI specification
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `statusCode` | `int` | Yes | - | HTTP status code (200, 404, 500, etc.) |
+| `responseType` | `Type?` | No | `null` | Response body type. Null for no body (204, 404) |
+| `contentType` | `string` | No | `"application/json"` | Content type of the response |
+
+**Example:**
+
+```csharp
+// Handler with multiple response types
+public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, CreateOrderResponse>
+{
+    [ApiResponse(201, typeof(CreateOrderResponse), "application/json")]
+    [ApiResponse(400, typeof(ValidationProblem), "application/problem+json")]
+    [ApiResponse(409, typeof(ConflictProblem), "application/problem+json")]
+    [ApiResponse(500, typeof(ProblemDetails), "application/problem+json")]
+    public async ValueTask<CreateOrderResponse> Handle(
+        CreateOrderCommand request, 
+        CancellationToken cancellationToken)
+    {
+        // ... implementation
+    }
+}
+```
+
+This generates:
 
 ```yaml
 responses:
-  "200":
-    description: OK
+  "201":
+    description: Created
     content:
       application/json:
         schema:
-          $ref: "#/components/schemas/GetItemResponse"
-  "404":
-    description: Not Found
-    content:
-      application/json:
-        schema:
-          $ref: "#/components/schemas/NotFoundError"
-  "422":
-    description: Unprocessable Entity
+          $ref: "#/components/schemas/CreateOrderResponse"
+  "400":
+    description: Bad Request
     content:
       application/problem+json:
         schema:
-          type: object
-  "400":
-    $ref: "#/components/responses/BadRequest"
-  "401":
-    $ref: "#/components/responses/Unauthorized"
+          $ref: "#/components/schemas/ValidationProblem"
+  "409":
+    description: Conflict
+    content:
+      application/problem+json:
+        schema:
+          $ref: "#/components/schemas/ConflictProblem"
   "500":
-    $ref: "#/components/responses/InternalError"
+    description: Internal Server Error
+    content:
+      application/problem+json:
+        schema:
+          $ref: "#/components/schemas/ProblemDetails"
 ```
 
 > **Note:** When `.ProducesProblem(statusCode)` overlaps with a default error response (400, 401, 500), the custom `application/problem+json` response **replaces** the default `$ref` — no duplicates.

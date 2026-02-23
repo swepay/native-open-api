@@ -1,4 +1,5 @@
 using NativeMediator;
+using Native.OpenApi;
 using SampleApiFunction.Commands;
 using SampleApiFunction.Responses;
 
@@ -6,6 +7,8 @@ namespace SampleApiFunction.Handlers;
 
 public sealed class GetItemsHandler : IRequestHandler<Commands.GetItemsCommand, Responses.GetItemsResponse>
 {
+    [ApiResponse(200, typeof(GetItemsResponse), "application/json")]
+    [ApiResponse(500, typeof(ProblemDetails), "application/problem+json")]
     public ValueTask<Responses.GetItemsResponse> Handle(Commands.GetItemsCommand request, CancellationToken cancellationToken)
     {
         var items = new List<ItemDto>
@@ -21,6 +24,9 @@ public sealed class GetItemsHandler : IRequestHandler<Commands.GetItemsCommand, 
 
 public sealed class GetItemByIdHandler : IRequestHandler<Commands.GetItemByIdCommand, Responses.GetItemByIdResponse>
 {
+    [ApiResponse(200, typeof(GetItemByIdResponse), "application/json")]
+    [ApiResponse(404, typeof(ErrorResponse), "application/json")]
+    [ApiResponse(500, typeof(ProblemDetails), "application/problem+json")]
     public ValueTask<Responses.GetItemByIdResponse> Handle(Commands.GetItemByIdCommand request, CancellationToken cancellationToken)
     {
         var item = new ItemDto(request.Id, $"Item {request.Id}", $"Description for {request.Id}", 99.99m);
@@ -30,6 +36,9 @@ public sealed class GetItemByIdHandler : IRequestHandler<Commands.GetItemByIdCom
 
 public sealed class CreateItemHandler : IRequestHandler<Commands.CreateItemCommand, Responses.CreateItemResponse>
 {
+    [ApiResponse(201, typeof(CreateItemResponse), "application/json")]
+    [ApiResponse(400, typeof(ProblemDetails), "application/problem+json")]
+    [ApiResponse(500, typeof(ProblemDetails), "application/problem+json")]
     public ValueTask<Responses.CreateItemResponse> Handle(Commands.CreateItemCommand request, CancellationToken cancellationToken)
     {
         var id = Guid.NewGuid().ToString();
@@ -40,6 +49,10 @@ public sealed class CreateItemHandler : IRequestHandler<Commands.CreateItemComma
 
 public sealed class UpdateItemHandler : IRequestHandler<Commands.UpdateItemCommand, Responses.UpdateItemResponse>
 {
+    [ApiResponse(200, typeof(UpdateItemResponse), "application/json")]
+    [ApiResponse(404, typeof(ErrorResponse), "application/json")]
+    [ApiResponse(400, typeof(ProblemDetails), "application/problem+json")]
+    [ApiResponse(500, typeof(ProblemDetails), "application/problem+json")]
     public ValueTask<Responses.UpdateItemResponse> Handle(Commands.UpdateItemCommand request, CancellationToken cancellationToken)
     {
         return new ValueTask<Responses.UpdateItemResponse>(
@@ -49,6 +62,9 @@ public sealed class UpdateItemHandler : IRequestHandler<Commands.UpdateItemComma
 
 public sealed class DeleteItemHandler : IRequestHandler<Commands.DeleteItemCommand, Responses.DeleteItemResponse>
 {
+    [ApiResponse(200, typeof(DeleteItemResponse), "application/json")]
+    [ApiResponse(404, typeof(ErrorResponse), "application/json")]
+    [ApiResponse(500, typeof(ProblemDetails), "application/problem+json")]
     public ValueTask<Responses.DeleteItemResponse> Handle(Commands.DeleteItemCommand request, CancellationToken cancellationToken)
     {
         return new ValueTask<Responses.DeleteItemResponse>(
@@ -58,6 +74,8 @@ public sealed class DeleteItemHandler : IRequestHandler<Commands.DeleteItemComma
 
 public sealed class HealthCheckHandler : IRequestHandler<Commands.HealthCheckCommand, Responses.HealthCheckResponse>
 {
+    [ApiResponse(200, typeof(HealthCheckResponse), "application/json")]
+    [ApiResponse(503, typeof(ErrorResponse), "application/json")]
     public ValueTask<Responses.HealthCheckResponse> Handle(Commands.HealthCheckCommand request, CancellationToken cancellationToken)
     {
         return new ValueTask<Responses.HealthCheckResponse>(

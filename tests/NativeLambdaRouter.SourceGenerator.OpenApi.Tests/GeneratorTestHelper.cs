@@ -102,17 +102,7 @@ namespace TestApp;
 public interface IRouteEndpointBuilder
 {
     IRouteEndpointBuilder AllowAnonymous();
-    IRouteEndpointBuilder Produces(string contentType);
-    IRouteEndpointBuilder Produces(int statusCode);
-    IRouteEndpointBuilder Produces(int statusCode, string contentType);
-    IRouteEndpointBuilder Produces<T>(int statusCode);
-    IRouteEndpointBuilder Produces<T>(int statusCode, string contentType);
-    IRouteEndpointBuilder ProducesProblem(int statusCode);
-    IRouteEndpointBuilder ProducesProblem(int statusCode, string contentType);
-    IRouteEndpointBuilder WithName(string name);
-    IRouteEndpointBuilder WithSummary(string summary);
-    IRouteEndpointBuilder WithDescription(string description);
-    IRouteEndpointBuilder WithTags(params string[] tags);
+    IRouteEndpointBuilder Produces(params string[] tags);
     IRouteEndpointBuilder Accepts(string contentType);
     IRouteEndpointBuilder WithHeader(string name, string value);
     IRouteEndpointBuilder RequireRole(params string[] roles);

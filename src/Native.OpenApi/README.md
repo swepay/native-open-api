@@ -99,6 +99,97 @@ var redocHtml = renderer.RenderRedoc("/openapi/v1/spec.json", "My API Docs");
 var scalarHtml = renderer.RenderScalar("/openapi/v1/spec.json", "My API Docs");
 ```
 
+## ApiResponse Attribute
+
+The `ApiResponseAttribute` allows you to document HTTP responses directly on handler methods. This is particularly useful when using the `NativeLambdaRouter.SourceGenerator.OpenApi` package to automatically generate OpenAPI specifications.
+
+### Usage
+
+Apply the `[ApiResponse]` attribute to your handler methods to specify possible HTTP responses:
+
+```csharp
+using Native.OpenApi;
+using NativeMediator;
+
+public class GetProductHandler : IRequestHandler<GetProductCommand, GetProductResponse>
+{
+    [ApiResponse(200, typeof(GetProductResponse), "application/json")]
+    [ApiResponse(404, typeof(ErrorResponse), "application/json")]
+    [ApiResponse(400, typeof(ProblemDetails), "application/problem+json")]
+    [ApiResponse(500, typeof(ProblemDetails), "application/problem+json")]
+    public ValueTask<GetProductResponse> Handle(GetProductCommand request, CancellationToken cancellationToken)
+    {
+        // ... handler implementation
+    }
+}
+```
+
+### Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `statusCode` | `int` | Yes | - | HTTP status code (e.g., 200, 404, 500) |
+| `responseType` | `Type?` | No | `null` | Type of the response body. Null for no body (204, 404) |
+| `contentType` | `string` | No | `"application/json"` | Content type of the response |
+
+### Multiple Response Types
+
+The attribute can be applied multiple times to document various response scenarios:
+
+```csharp
+[ApiResponse(200, typeof(Product))]              // Success with JSON
+[ApiResponse(201, typeof(Product))]              // Created with JSON
+[ApiResponse(204)]                                // No Content
+[ApiResponse(400, typeof(ValidationProblem), "application/problem+json")]
+[ApiResponse(401)]                                // Unauthorized (no body)
+[ApiResponse(403, typeof(ProblemDetails), "application/problem+json")]
+[ApiResponse(404, typeof(ProblemDetails), "application/problem+json")]
+[ApiResponse(500, typeof(ProblemDetails), "application/problem+json")]
+```
+
+### How It Works
+
+When used with the `NativeLambdaRouter.SourceGenerator.OpenApi`:
+
+1. The Source Generator scans your code for handler methods (implementing `IRequestHandler<TCommand, TResponse>`)
+2. It reads `[ApiResponse]` attributes from the handler's `Handle` method
+3. It automatically includes these responses in the generated OpenAPI specification
+4. Each response is properly typed and includes the correct content type
+
+### Benefits
+
+- **Type-safe**: Response types are checked at compile time
+- **Single Source of Truth**: Documentation lives next to the implementation
+- **Auto-generated**: No manual YAML/JSON editing required
+- **AOT-compatible**: Works perfectly with Native AOT compilation
+
+### Example: Complete Handler
+
+```csharp
+public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, CreateOrderResponse>
+{
+    [ApiResponse(201, typeof(CreateOrderResponse), "application/json")]
+    [ApiResponse(400, typeof(ValidationProblemDetails), "application/problem+json")]
+    [ApiResponse(409, typeof(ConflictProblemDetails), "application/problem+json")]
+    [ApiResponse(500, typeof(ProblemDetails), "application/problem+json")]
+    public async ValueTask<CreateOrderResponse> Handle(
+        CreateOrderCommand request, 
+        CancellationToken cancellationToken)
+    {
+        // Validate request
+        if (string.IsNullOrEmpty(request.CustomerId))
+            throw new ValidationException("CustomerId is required");
+
+        // Create order
+        var order = await _orderService.CreateAsync(request, cancellationToken);
+        
+        return new CreateOrderResponse(order.Id, order.Total);
+    }
+}
+```
+
+The generated OpenAPI spec will include all four response types with proper schemas and content types.
+
 ## Linting Rules
 
 Configure linting rules using `OpenApiLintOptions`:

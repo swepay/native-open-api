@@ -2,7 +2,7 @@ namespace NativeLambdaRouter.SourceGenerator.OpenApi.Tests;
 
 /// <summary>
 /// Tests for OpenAPI metadata support: fluent chain methods (.WithName, .WithDescription,
-/// .WithSummary, .WithTags, .Produces&lt;T&gt;, .ProducesProblem, .Accepts) and attribute-based metadata
+/// .WithSummary, .WithTags, .ProducesProblem, .Accepts) and attribute-based metadata
 /// ([EndpointName], [EndpointSummary], [EndpointDescription], [Tags], [Accepts]).
 /// </summary>
 public sealed class OpenApiMetadataTests
@@ -206,125 +206,6 @@ public class MyRouter
         generatedSource.Should().Contain("\"\"404\"\":");
         generatedSource.Should().Contain("application/problem+json");
         generatedSource.Should().Contain("Not Found");
-    }
-
-    // ── Produces<T>(statusCode) ─────────────────────────────────────
-
-    [Fact]
-    public void Generator_GenericProduces_EmitsTypedResponse()
-    {
-        // Arrange
-        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
-        var sourceCode = routeBuilderSource + @"
-
-namespace TestApp;
-
-public class GetItemCommand { }
-public class GetItemResponse { }
-public class NotFoundError { }
-
-public class MyRouter
-{
-    protected void ConfigureRoutes(IRouteBuilder routes)
-    {
-        routes.MapGet<GetItemCommand, GetItemResponse>(""/v1/items/{id}"", ctx => new GetItemCommand())
-            .Produces<NotFoundError>(404);
-    }
-}
-";
-
-        // Act
-        var result = GeneratorTestHelper.RunGenerator(sourceCode);
-        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
-
-        // Assert
-        generatedSource.Should().NotBeNull();
-        generatedSource.Should().Contain("\"\"404\"\":");
-        generatedSource.Should().Contain("NotFoundError");
-    }
-
-    // ── Multiple Produces ───────────────────────────────────────────
-
-    [Fact]
-    public void Generator_MultipleProduces_EmitsAllResponses()
-    {
-        // Arrange
-        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
-        var sourceCode = routeBuilderSource + @"
-
-namespace TestApp;
-
-public class GetItemCommand { }
-public class GetItemResponse { }
-public class NotFoundError { }
-public class ValidationError { }
-
-public class MyRouter
-{
-    protected void ConfigureRoutes(IRouteBuilder routes)
-    {
-        routes.MapGet<GetItemCommand, GetItemResponse>(""/v1/items/{id}"", ctx => new GetItemCommand())
-            .Produces<NotFoundError>(404)
-            .ProducesProblem(422);
-    }
-}
-";
-
-        // Act
-        var result = GeneratorTestHelper.RunGenerator(sourceCode);
-        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
-
-        // Assert
-        generatedSource.Should().NotBeNull();
-        generatedSource.Should().Contain("\"\"404\"\":");
-        generatedSource.Should().Contain("NotFoundError");
-        generatedSource.Should().Contain("\"\"422\"\":");
-        generatedSource.Should().Contain("application/problem+json");
-    }
-
-    // ── Full chaining ───────────────────────────────────────────────
-
-    [Fact]
-    public void Generator_FullFluentChain_AllMetadataApplied()
-    {
-        // Arrange
-        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
-        var sourceCode = routeBuilderSource + @"
-
-namespace TestApp;
-
-public class ListClientsCommand { }
-public class ListClientsResponse { }
-public class ResponseError { }
-
-public class MyRouter
-{
-    protected void ConfigureRoutes(IRouteBuilder routes)
-    {
-        routes.MapGet<ListClientsCommand, ListClientsResponse>(
-            ""/v1/clients"", ctx => new ListClientsCommand())
-            .WithName(""GetAllClients"")
-            .WithDescription(""This endpoint gets all clients"")
-            .WithTags(""Clients"")
-            .Produces<ResponseError>(404)
-            .ProducesProblem(500);
-    }
-}
-";
-
-        // Act
-        var result = GeneratorTestHelper.RunGenerator(sourceCode);
-        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
-
-        // Assert
-        generatedSource.Should().NotBeNull();
-        generatedSource.Should().Contain("operationId: GetAllClients");
-        generatedSource.Should().Contain("description: \"\"This endpoint gets all clients\"\"");
-        generatedSource.Should().Contain("- Clients");
-        generatedSource.Should().Contain("\"\"404\"\":");
-        generatedSource.Should().Contain("ResponseError");
-        // 500 is covered by ProducesProblem, so default $ref should not appear
-        generatedSource.Should().Contain("application/problem+json");
     }
 
     // ── Attribute-based metadata ────────────────────────────────────
@@ -777,7 +658,7 @@ public class MyRouter
             .WithDescription(""Exchanges a valid refresh token for a new access token."")
             .WithTags(""OAuth2"")
             .Accepts(""application/x-www-form-urlencoded"")
-            .Produces<TokenResponse>(200)
+
             .ProducesProblem(400)
             .ProducesProblem(401)
             .AllowAnonymous();

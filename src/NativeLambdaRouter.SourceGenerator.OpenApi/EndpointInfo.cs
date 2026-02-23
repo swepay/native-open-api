@@ -76,7 +76,7 @@ internal sealed class EndpointInfo
     public List<string> Tags { get; set; } = new();
 
     /// <summary>
-    /// Additional response definitions specified via .Produces() / .ProducesProblem().
+    /// Additional response definitions specified via .ProducesProblem() or [ApiResponse] attributes.
     /// Each entry is (StatusCode, ResponseTypeSimpleName, ContentType).
     /// </summary>
     public List<ProducesInfo> AdditionalProduces { get; set; } = new();
