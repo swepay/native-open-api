@@ -14,6 +14,7 @@ namespace Functions.OpenId;
 [JsonSerializable(typeof(JwkKey[]))]
 [JsonSerializable(typeof(TokenCommand))]
 [JsonSerializable(typeof(TokenResponse))]
+[JsonSerializable(typeof(InvalidGrantError))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(ErrorResponse))]
 [JsonSerializable(typeof(RouteNotFoundResponse))]

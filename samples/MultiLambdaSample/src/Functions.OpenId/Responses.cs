@@ -14,3 +14,4 @@ public sealed record JwksResponse(JwkKey[] Keys);
 public sealed record JwkKey(string Kty, string Use, string Kid, string N, string E);
 
 public sealed record TokenResponse(string AccessToken, string TokenType, long ExpiresIn, string IdToken);
+public sealed record InvalidGrantError(string Error, string ErrorDescription);

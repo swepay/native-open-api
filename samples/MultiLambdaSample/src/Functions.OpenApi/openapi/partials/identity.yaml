@@ -6,11 +6,35 @@ info:
 
 paths:
   /v1/auth/login:
-    post:
-      operationId: postV1AuthLogin
-      summary: "Create Login"
+    options:
+      operationId: LoginOptions
+      summary: "Metadados de métodos de autenticação"
+      description: "Demonstra suporte ao Map<TCommand, TResponse> com método HTTP customizado"
       tags:
-        - V1
+        - Identity
+        - Metadata
+      security: []
+      responses:
+        "200":
+          description: "Successful response"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginOptionsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    post:
+      operationId: LoginWithPasswordFluent
+      summary: "Realiza login com senha"
+      description: "Demonstra precedência de fluent metadata sobre atributos"
+      tags:
+        - Identity
+        - Auth
+        - Fluent
       security: []
       requestBody:
         required: true
@@ -25,25 +49,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: "Unauthorized"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvalidCredentialsError"
+        "429":
+          description: "Response 429"
+          content:
+            application/problem+json:
+              schema:
+                type: object
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
   /v1/auth/refresh:
     post:
-      operationId: postV1AuthRefresh
-      summary: "Create RefreshToken"
+      operationId: RefreshToken
+      summary: "Renova access token"
+      description: "Demonstra metadata via atributos para request form-urlencoded"
       tags:
-        - V1
+        - Identity
+        - OAuth2
       security: []
       requestBody:
         required: true
         content:
-          application/json:
+          application/x-www-form-urlencoded:
             schema:
-              $ref: "#/components/schemas/RefreshTokenCommand"
+              type: object
+              properties:
+                clientId:
+                  type: string
+                refreshToken:
+                  type: string
+                scope:
+                  type: string
+              required:
+                - clientId
+                - refreshToken
       responses:
         "200":
           description: "Successful response"
@@ -51,6 +97,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RefreshTokenResponse"
+        "422":
+          description: "Unprocessable Entity"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationProblemError"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -59,10 +111,12 @@ paths:
           $ref: "#/components/responses/InternalServerError"
   /v1/auth/register:
     post:
-      operationId: postV1AuthRegister
-      summary: "Create Register"
+      operationId: RegisterUser
+      summary: "Registra um novo usuário"
+      description: "Cria um novo usuário no domínio de identidade"
       tags:
-        - V1
+        - Identity
+        - Auth
       security: []
       requestBody:
         required: true
@@ -78,7 +132,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/RegisterResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: "Bad Request"
+          content:
+            application/problem+json:
+              schema:
+                type: object
         "401":
           $ref: "#/components/responses/Unauthorized"
         "500":
@@ -88,19 +146,86 @@ components:
   schemas:
     LoginCommand:
       type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required:
+        - email
+        - password
+    LoginOptionsCommand:
+      type: object
       description: "Request type - properties to be documented"
+    LoginOptionsResponse:
+      type: object
+      properties:
+        methods:
+          type: array
+          items:
+            type: string
+      required:
+        - methods
     LoginResponse:
       type: object
-      description: "Response type - properties to be documented"
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+          format: int64
+      required:
+        - accessToken
+        - refreshToken
+        - expiresIn
     RefreshTokenCommand:
       type: object
-      description: "Request type - properties to be documented"
+      properties:
+        clientId:
+          type: string
+        refreshToken:
+          type: string
+        scope:
+          type: string
+      required:
+        - clientId
+        - refreshToken
     RefreshTokenResponse:
       type: object
-      description: "Response type - properties to be documented"
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+          format: int64
+      required:
+        - accessToken
+        - refreshToken
+        - expiresIn
     RegisterCommand:
       type: object
-      description: "Request type - properties to be documented"
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        displayName:
+          type: string
+      required:
+        - email
+        - password
+        - displayName
     RegisterResponse:
       type: object
-      description: "Response type - properties to be documented"
+      properties:
+        userId:
+          type: string
+        message:
+          type: string
+      required:
+        - userId
+        - message

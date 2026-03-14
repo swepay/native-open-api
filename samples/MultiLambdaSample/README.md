@@ -1,211 +1,124 @@
 # MultiLambdaSample
 
-This sample demonstrates how to use **NativeLambdaRouter.SourceGenerator.OpenApi** and **NativeOpenApi** in a multi-Lambda architecture where **all projects share `AssemblyName=bootstrap`** (required by AWS Lambda custom runtime).
+Exemplo completo de arquitetura **multi-Lambda** usando:
 
-## Architecture
+- `NativeLambdaRouter.SourceGenerator.OpenApi` (geração de OpenAPI em compile-time)
+- `NativeOpenApi` (load + merge + lint + render dos documentos)
 
-```
-┌───────────────────────────────────────────────────────────────┐
-│                    Multi-Lambda Platform                       │
-├──────────────────┬──────────────────┬─────────────────────────┤
-│  Functions.Admin │ Functions.Identity│    Functions.OpenId      │
-│  (producer)      │ (producer)       │    (producer)            │
-│                  │                  │                          │
-│  GET  /v1/admin/ │ POST /v1/auth/   │ GET /.well-known/       │
-│       users      │      login       │     openid-configuration │
-│  POST /v1/admin/ │ POST /v1/auth/   │ GET /.well-known/       │
-│       users      │      register    │     jwks.json            │
-│  DEL  /v1/admin/ │ POST /v1/auth/   │ POST /v1/openid/token   │
-│       users/{id} │      refresh     │                          │
-├──────────────────┴──────────────────┴─────────────────────────┤
-│                      Functions.OpenApi                         │
-│                       (consumer)                               │
-│                                                                │
-│  GET /docs/openapi.json  → Merged OpenAPI JSON                 │
-│  GET /docs/redoc         → Redoc HTML viewer                   │
-│  GET /docs/scalar        → Scalar HTML viewer                  │
-│                                                                │
-│  Merges all 3 producer specs + common schemas/responses/       │
-│  security into a single consolidated OpenAPI 3.1.0 document    │
-└───────────────────────────────────────────────────────────────┘
-```
+Objetivo: demonstrar **todos os recursos disponíveis** do gerador/OpenAPI em um cenário real com `AssemblyName=bootstrap`.
 
-## The `AssemblyName=bootstrap` Problem
+## TL;DR
 
-AWS Lambda custom runtime requires the entry point to be named `bootstrap`. When multiple Lambda projects in the same solution all set `AssemblyName=bootstrap`, two problems arise:
+- Três Lambdas produtoras (`Admin`, `Identity`, `OpenId`) geram specs OpenAPI parciais.
+- Uma Lambda consumidora (`Functions.OpenApi`) carrega e consolida tudo em `/docs/openapi.json`.
+- O fluxo usa extração automática de YAML via `Directory.Build.targets`.
 
-### Problem 1: Source Generator Namespace Collision
+## Arquitetura
 
-The Source Generator uses `AssemblyName` to generate the namespace `{AssemblyName}.Generated`. With all projects named `bootstrap`, they'd all generate `bootstrap.Generated.GeneratedOpenApiSpec`.
+- `Functions.Admin`: endpoints administrativos
+- `Functions.Identity`: autenticação/registro/refresh
+- `Functions.OpenId`: discovery + token endpoint OIDC
+- `Functions.OpenApi`: merge de specs + UI (`/docs/redoc`, `/docs/scalar`)
 
-**Solution:** Use the `OpenApiSpecName` MSBuild property:
+## Cobertura de recursos (matriz)
 
-```xml
-<OpenApiSpecName>Functions.Admin</OpenApiSpecName>
-<OpenApiSpecTitle>Admin API</OpenApiSpecTitle>
-```
+| Recurso | Onde está no sample |
+|---|---|
+| `MapGet<TCommand,TResponse>` | `Functions.Admin`, `Functions.OpenId`, `Functions.OpenApi` |
+| `MapPost<TCommand,TResponse>` | `Functions.Admin`, `Functions.Identity`, `Functions.OpenId` |
+| `MapPut<TCommand,TResponse>` | `Functions.Admin` |
+| `MapPatch<TCommand,TResponse>` | `Functions.Admin` |
+| `MapDelete<TCommand,TResponse>` | `Functions.Admin` |
+| `Map<TCommand,TResponse>("METHOD", ...)` | `Functions.Identity` (`OPTIONS /v1/auth/login`) |
+| `.WithName/.WithSummary/.WithDescription/.WithTags` | Vários endpoints em todos os projetos |
+| `[EndpointName]/[EndpointSummary]/[EndpointDescription]/[Tags]` | `Functions.Identity.Commands`, `Functions.Admin.Commands` |
+| Precedência fluent > atributo | `Functions.Identity` (`LoginCommand` + fluent no route) |
+| `.Accepts("application/x-www-form-urlencoded")` (fluent) | `Functions.OpenId` token endpoint |
+| `[Accepts("application/x-www-form-urlencoded")]` (atributo) | `Functions.Identity.RefreshTokenCommand` |
+| `.Produces<T>(statusCode)` | `Functions.Admin`, `Functions.Identity`, `Functions.OpenId` |
+| `.ProducesProblem(statusCode)` | `Functions.Admin`, `Functions.Identity`, `Functions.OpenId` |
+| `.AllowAnonymous()` (`security: []`) | `Functions.Identity`, `Functions.OpenId`, `Functions.OpenApi` |
+| Introspecção de schema (nullable/required) | Commands com propriedades nullable (`Scope`, `ClientSecret`, `DisplayName`) |
+| Merge + lint + render de OpenAPI | `Functions.OpenApi` |
 
-This generates `Functions.Admin.Generated.GeneratedOpenApiSpec` instead.
+## Problema de `AssemblyName=bootstrap`
 
-### Problem 2: NuGet Restore Ambiguity
+Em AWS Lambda custom runtime, múltiplos projetos com `AssemblyName=bootstrap` causam:
 
-When one project references another via `<ProjectReference>` and both have `AssemblyName=bootstrap`, NuGet restore fails with:
+1. Colisão de namespace no código gerado (`bootstrap.Generated`)
+2. Ambiguidade de restore ao usar `ProjectReference` direto entre produtores
 
-```
-error: Ambiguous project name 'bootstrap'
-```
+### Solução usada neste sample
 
-**Solution:** The consumer project (`Functions.OpenApi`) does **not** reference the producer projects directly. Instead, it embeds the YAML partial specs as resources:
+- Cada produtor define:
+  - `OpenApiSpecName` (namespace único da spec gerada)
+  - `OpenApiSpecTitle` (título da API)
+  - `OpenApiPartialName` (nome do arquivo YAML parcial)
+- `Directory.Build.targets` extrai `YamlContent` do `.g.cs` e grava em:
+  - `src/Functions.OpenApi/openapi/partials/*.yaml`
 
-1. Each producer project builds and the Source Generator creates an in-memory OpenAPI YAML
-2. `Directory.Build.targets` extracts the YAML from the generated `.g.cs` and writes it to `Functions.OpenApi/openapi/partials/`
-3. The consumer loads them as embedded resources via `OpenApiDocumentLoaderBase.Load()`
+## Build (ordem obrigatória)
 
-## Automated YAML Extraction
-
-The solution uses a `Directory.Build.targets` with an inline MSBuild task (`ExtractOpenApiYaml`) to automatically extract the generated OpenAPI YAML from each producer project on every build. No manual copy is needed.
-
-### How It Works
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  Producer Build (e.g. Functions.Admin)                                   │
-│                                                                          │
-│  1. Roslyn compiles the project                                          │
-│  2. Source Generator produces GeneratedOpenApiSpec.g.cs (in-memory)      │
-│  3. EmitCompilerGeneratedFiles=true writes the .g.cs to disk             │
-│  4. ExportOpenApiPartialSpec target runs after build:                     │
-│     - Reads obj/.../GeneratedOpenApiSpec.g.cs                            │
-│     - Extracts YamlContent const via regex                               │
-│     - Writes to Functions.OpenApi/openapi/partials/{name}.yaml           │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Required Files
-
-#### `Directory.Build.props`
-
-Exposes `OpenApiSpecName` and `OpenApiSpecTitle` MSBuild properties to the Roslyn analyzer. This is required when the Source Generator is referenced via `ProjectReference` instead of NuGet `PackageReference` (the NuGet package ships a `.props` that handles this automatically).
-
-```xml
-<Project>
-  <ItemGroup>
-    <CompilerVisibleProperty Include="OpenApiSpecName" />
-    <CompilerVisibleProperty Include="OpenApiSpecTitle" />
-  </ItemGroup>
-</Project>
-```
-
-#### `Directory.Build.targets`
-
-Defines the `ExtractOpenApiYaml` inline task and the `ExportOpenApiPartialSpec` target that runs after each producer build.
-
-#### Producer `.csproj` Properties
-
-Each producer project needs these properties:
-
-```xml
-<PropertyGroup>
-  <!-- Customize namespace and title for the generated spec -->
-  <OpenApiSpecName>Functions.Admin</OpenApiSpecName>
-  <OpenApiSpecTitle>Admin API</OpenApiSpecTitle>
-
-  <!-- Save source-generated .g.cs to disk for extraction -->
-  <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
-
-  <!-- Name of the partial YAML exported to Functions.OpenApi/openapi/partials/ -->
-  <OpenApiPartialName>admin</OpenApiPartialName>
-</PropertyGroup>
-```
-
-| Property | Required | Description |
-|----------|----------|-------------|
-| `OpenApiSpecName` | Yes | Namespace override for the generated class |
-| `OpenApiSpecTitle` | Yes | API title in the generated YAML `info.title` |
-| `EmitCompilerGeneratedFiles` | Yes | Writes `.g.cs` to disk for extraction |
-| `OpenApiPartialName` | Yes | Output filename (without `.yaml`) in `openapi/partials/` |
-
-## Project Structure
-
-```
-MultiLambdaSample/
-├── MultiLambdaSample.slnx
-├── Directory.Build.props           # CompilerVisibleProperty for ProjectReference
-├── Directory.Build.targets         # ExtractOpenApiYaml task + ExportOpenApiPartialSpec target
-├── README.md
-└── src/
-    ├── Functions.Admin/            # Producer: Admin endpoints
-    │   ├── Functions.Admin.csproj  # AssemblyName=bootstrap, OpenApiSpecName=Functions.Admin
-    │   ├── Function.cs
-    │   ├── Commands.cs
-    │   ├── Responses.cs
-    │   ├── Handlers.cs
-    │   └── AdminJsonContext.cs
-    ├── Functions.Identity/         # Producer: Auth endpoints
-    │   ├── Functions.Identity.csproj
-    │   ├── Function.cs
-    │   ├── Commands.cs
-    │   ├── Responses.cs
-    │   ├── Handlers.cs
-    │   └── IdentityJsonContext.cs
-    ├── Functions.OpenId/           # Producer: OIDC endpoints
-    │   ├── Functions.OpenId.csproj
-    │   ├── Function.cs
-    │   ├── Commands.cs
-    │   ├── Responses.cs
-    │   ├── Handlers.cs
-    │   └── OpenIdJsonContext.cs
-    └── Functions.OpenApi/          # Consumer: Merges all specs
-        ├── Functions.OpenApi.csproj
-        ├── Function.cs
-        ├── Commands.cs
-        ├── Responses.cs
-        ├── MultiLambdaDocumentLoader.cs
-        ├── MultiLambdaDocumentMerger.cs
-        ├── OpenApiJsonSerializerContext.cs
-        └── openapi/
-            ├── common/
-            │   ├── schemas.yaml
-            │   ├── responses.yaml
-            │   └── security.yaml
-            └── partials/
-                ├── admin.yaml
-                ├── identity.yaml
-                └── openid.yaml
-```
-
-## Building
+> Não faça `dotnet build` da solution inteira nesse cenário.
 
 ```bash
-# Build all producers first, then the consumer.
-# Each producer automatically extracts its YAML to Functions.OpenApi/openapi/partials/
 dotnet build src/Functions.Admin/Functions.Admin.csproj
 dotnet build src/Functions.Identity/Functions.Identity.csproj
 dotnet build src/Functions.OpenId/Functions.OpenId.csproj
-
-# Build the consumer (uses the extracted YAML partials)
 dotnet build src/Functions.OpenApi/Functions.OpenApi.csproj
 ```
 
-> **Note:** You cannot `dotnet build` the entire solution at once because all projects share `AssemblyName=bootstrap`, which causes NuGet restore ambiguity. Build each project individually in order.
+## Endpoints principais
 
-## Key MSBuild Properties
+### Admin
 
-| Property | Description | Example |
-|----------|-------------|---------|
-| `OpenApiSpecName` | Overrides the namespace for the generated class | `Functions.Admin` |
-| `OpenApiSpecTitle` | Sets the title in the generated OpenAPI YAML | `Admin API` |
-| `AssemblyName` | Must be `bootstrap` for AWS Lambda custom runtime | `bootstrap` |
-| `RootNamespace` | Keeps the original namespace for C# code | `Functions.Admin` |
-| `EmitCompilerGeneratedFiles` | Writes `.g.cs` to disk for YAML extraction | `true` |
-| `OpenApiPartialName` | Output filename in `openapi/partials/` | `admin` |
+- `GET /v1/admin/users`
+- `POST /v1/admin/users`
+- `PUT /v1/admin/users/{id}`
+- `PATCH /v1/admin/users/{id}/role`
+- `DELETE /v1/admin/users/{id}`
 
-## How the Consumer Works
+### Identity
 
-`Functions.OpenApi` uses `Native.OpenApi` library to:
+- `POST /v1/auth/login`
+- `POST /v1/auth/register`
+- `POST /v1/auth/refresh`
+- `OPTIONS /v1/auth/login` (via `Map<...>("OPTIONS", ...)`)
 
-1. **Load common parts** — schemas, responses, security definitions (3 YAML files)
-2. **Load partial specs** — one per producer Lambda (3 YAML files)
-3. **Merge** all parts into a single OpenAPI 3.1.0 document
-4. **Lint** the merged document for consistency
-5. **Serve** the consolidated spec via Redoc and Scalar viewers
+### OpenId
+
+- `GET /.well-known/openid-configuration`
+- `GET /.well-known/jwks.json`
+- `POST /v1/openid/token` (form-urlencoded)
+
+### Docs
+
+- `GET /docs/openapi.json`
+- `GET /docs/redoc`
+- `GET /docs/scalar`
+
+## Checklist para agentes de IA
+
+Use esta sequência para operar no sample sem quebrar o fluxo:
+
+1. Build produtores na ordem: `Admin -> Identity -> OpenId`.
+2. Verifique geração de parciais em `src/Functions.OpenApi/openapi/partials/`.
+3. Build `Functions.OpenApi`.
+4. Validar que `/docs/openapi.json` contém:
+   - operações de todos os domínios,
+   - `security: []` nos anônimos,
+   - request body `application/x-www-form-urlencoded` em refresh/token,
+   - respostas extras (`Produces<T>`, `ProducesProblem`).
+5. Só depois validar Redoc/Scalar.
+
+## Arquivos-chave
+
+- `Directory.Build.props`
+- `Directory.Build.targets`
+- `src/Functions.Admin/Functions.Admin.csproj`
+- `src/Functions.Identity/Functions.Identity.csproj`
+- `src/Functions.OpenId/Functions.OpenId.csproj`
+- `src/Functions.OpenApi/MultiLambdaDocumentLoader.cs`
+- `src/Functions.OpenApi/MultiLambdaDocumentMerger.cs`
+- `src/Functions.OpenApi/openapi/common/*.yaml`
+- `src/Functions.OpenApi/openapi/partials/*.yaml`

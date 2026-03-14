@@ -63,6 +63,29 @@ public class GetItemHandler : IRequestHandler<GetItemCommand, GetItemResponse>
 - Response definitions from `[ApiResponse]` attributes are merged with fluent chain `.ProducesProblem()` calls, providing complementary documentation approaches.
 - The attribute is AOT-compatible and generates no runtime overhead — all processing happens at compile time via the Source Generator.
 
+## [Unreleased] - 2026-03-14
+
+### Added
+- **MultiLambdaSample**: Expanded producer routes to cover all mapper variants supported by the Source Generator:
+  - `MapGet`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete`
+  - `Map<TCommand, TResponse>("OPTIONS", ... )` for custom HTTP method mapping
+- **MultiLambdaSample**: Added richer metadata examples across routes using fluent chain methods:
+  - `.WithName()`, `.WithSummary()`, `.WithDescription()`, `.WithTags()`
+  - `.Produces<T>(statusCode)` and `.ProducesProblem(statusCode)`
+  - `.Accepts("application/x-www-form-urlencoded")` and `.AllowAnonymous()`
+- **MultiLambdaSample**: Added attribute-based metadata examples in command types:
+  - `[EndpointName]`, `[EndpointSummary]`, `[EndpointDescription]`, `[Tags]`, `[Accepts]`
+  - Includes explicit fluent-over-attribute precedence scenario in Identity login route.
+- **MultiLambdaSample**: Added additional command/response models and handlers to enrich generated schemas and required/nullable behavior.
+
+### Changed
+- **Documentation**: Rewrote `samples/MultiLambdaSample/README.md` as a human + AI friendly playbook with:
+  - feature coverage matrix,
+  - deterministic build flow,
+  - endpoint inventory,
+  - operational checklist for agents.
+- **Documentation**: Updated root `README.md` sample navigation to include `MultiLambdaSample` as the complete reference sample and clarified when to use each sample.
+
 ## [1.5.1] - 2026-02-19
 
 ### Added

@@ -29,17 +29,27 @@ public sealed class Function : RoutedApiGatewayFunction
         routes.MapGet<GetOpenApiJsonCommand, GetOpenApiJsonResponse>(
             "/docs/openapi.json",
             ctx => new GetOpenApiJsonCommand())
+            .WithName("GetMergedOpenApiJson")
+            .WithSummary("Retorna OpenAPI consolidado")
+            .WithDescription("Documento OpenAPI 3.1 consolidado das funções Admin, Identity e OpenId")
+            .WithTags("Docs", "OpenApi")
             .AllowAnonymous();
 
         routes.MapGet<GetRedocCommand, GetRedocResponse>(
             "/docs/redoc",
             ctx => new GetRedocCommand())
+            .WithName("GetRedocUi")
+            .WithSummary("Retorna documentação Redoc")
+            .WithTags("Docs", "Redoc")
             .Produces("text/html")
             .AllowAnonymous();
 
         routes.MapGet<GetScalarCommand, GetScalarResponse>(
             "/docs/scalar",
             ctx => new GetScalarCommand())
+            .WithName("GetScalarUi")
+            .WithSummary("Retorna documentação Scalar")
+            .WithTags("Docs", "Scalar")
             .Produces("text/html")
             .AllowAnonymous();
     }

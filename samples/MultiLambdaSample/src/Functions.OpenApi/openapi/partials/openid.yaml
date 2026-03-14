@@ -7,10 +7,11 @@ info:
 paths:
   /.well-known/jwks.json:
     get:
-      operationId: get.well-knownJwks.json
-      summary: "Get Jwks"
+      operationId: GetJwks
+      summary: "Retorna JWKS para validação de tokens"
       tags:
-        - .well-known
+        - OpenID
+        - Discovery
       security: []
       responses:
         "200":
@@ -27,10 +28,11 @@ paths:
           $ref: "#/components/responses/InternalServerError"
   /.well-known/openid-configuration:
     get:
-      operationId: get.well-knownOpenid-configuration
-      summary: "Get OpenIdConfiguration"
+      operationId: GetOpenIdConfiguration
+      summary: "Retorna metadata OpenID Connect"
       tags:
-        - .well-known
+        - OpenID
+        - Discovery
       security: []
       responses:
         "200":
@@ -47,17 +49,35 @@ paths:
           $ref: "#/components/responses/InternalServerError"
   /v1/openid/token:
     post:
-      operationId: postV1OpenidToken
-      summary: "Create Token"
+      operationId: ExchangeAuthorizationCode
+      summary: "Troca authorization code por tokens"
+      description: "Demonstra .Accepts(form-urlencoded) com schema inline de propriedades"
       tags:
-        - V1
+        - OpenID
+        - OAuth2
       security: []
       requestBody:
         required: true
         content:
-          application/json:
+          application/x-www-form-urlencoded:
             schema:
-              $ref: "#/components/schemas/TokenCommand"
+              type: object
+              properties:
+                clientId:
+                  type: string
+                clientSecret:
+                  type: string
+                grantType:
+                  type: string
+                code:
+                  type: string
+                redirectUri:
+                  type: string
+              required:
+                - clientId
+                - grantType
+                - code
+                - redirectUri
       responses:
         "200":
           description: "Successful response"
@@ -66,9 +86,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: "Bad Request"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvalidGrantError"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: "Unauthorized"
+          content:
+            application/problem+json:
+              schema:
+                type: object
         "500":
           $ref: "#/components/responses/InternalServerError"
 
@@ -79,16 +107,79 @@ components:
       description: "Request type - properties to be documented"
     JwksResponse:
       type: object
-      description: "Response type - properties to be documented"
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/JwkKey"
+      required:
+        - keys
     OpenIdConfigurationCommand:
       type: object
       description: "Request type - properties to be documented"
     OpenIdConfigurationResponse:
       type: object
-      description: "Response type - properties to be documented"
+      properties:
+        issuer:
+          type: string
+        authorizationEndpoint:
+          type: string
+        tokenEndpoint:
+          type: string
+        jwksUri:
+          type: string
+        responseTypesSupported:
+          type: array
+          items:
+            type: string
+        subjectTypesSupported:
+          type: array
+          items:
+            type: string
+        idTokenSigningAlgValuesSupported:
+          type: array
+          items:
+            type: string
+      required:
+        - issuer
+        - authorizationEndpoint
+        - tokenEndpoint
+        - jwksUri
+        - responseTypesSupported
+        - subjectTypesSupported
+        - idTokenSigningAlgValuesSupported
     TokenCommand:
       type: object
-      description: "Request type - properties to be documented"
+      properties:
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+        grantType:
+          type: string
+        code:
+          type: string
+        redirectUri:
+          type: string
+      required:
+        - clientId
+        - grantType
+        - code
+        - redirectUri
     TokenResponse:
       type: object
-      description: "Response type - properties to be documented"
+      properties:
+        accessToken:
+          type: string
+        tokenType:
+          type: string
+        expiresIn:
+          type: integer
+          format: int64
+        idToken:
+          type: string
+      required:
+        - accessToken
+        - tokenType
+        - expiresIn
+        - idToken

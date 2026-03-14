@@ -30,3 +30,11 @@ public sealed class RefreshTokenHandler : IRequestHandler<RefreshTokenCommand, R
             new RefreshTokenResponse("new-access-token", "new-refresh-token", 3600));
     }
 }
+
+public sealed class LoginOptionsHandler : IRequestHandler<LoginOptionsCommand, LoginOptionsResponse>
+{
+    public ValueTask<LoginOptionsResponse> Handle(LoginOptionsCommand request, CancellationToken cancellationToken)
+    {
+        return new ValueTask<LoginOptionsResponse>(new LoginOptionsResponse(["password", "otp", "webauthn"]));
+    }
+}

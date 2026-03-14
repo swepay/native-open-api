@@ -32,3 +32,12 @@ public sealed class DeleteUserHandler : IRequestHandler<DeleteUserCommand, Delet
         return new ValueTask<DeleteUserResponse>(new DeleteUserResponse(request.Id, $"User '{request.Id}' deleted"));
     }
 }
+
+public sealed class UpdateUserRoleHandler : IRequestHandler<UpdateUserRoleCommand, UpdateUserRoleResponse>
+{
+    public ValueTask<UpdateUserRoleResponse> Handle(UpdateUserRoleCommand request, CancellationToken cancellationToken)
+    {
+        return new ValueTask<UpdateUserRoleResponse>(
+            new UpdateUserRoleResponse(request.Id, request.Role, $"Role for user '{request.Id}' updated to '{request.Role}'"));
+    }
+}

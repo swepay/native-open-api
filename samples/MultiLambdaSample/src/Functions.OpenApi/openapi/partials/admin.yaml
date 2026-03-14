@@ -7,10 +7,12 @@ info:
 paths:
   /v1/admin/users:
     get:
-      operationId: getV1AdminUsers
-      summary: "Get ListUsers"
+      operationId: ListAdminUsers
+      summary: "Lista usuários administrativos"
+      description: "Retorna usuários administrativos e demonstra precedência de fluent metadata sobre atributos"
       tags:
-        - V1
+        - Admin
+        - Users
       security:
         - JwtBearer: []
       responses:
@@ -21,16 +23,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/ListUsersResponse"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: "Bad Request"
+          content:
+            application/problem+json:
+              schema:
+                type: object
         "401":
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
     post:
-      operationId: postV1AdminUsers
-      summary: "Create CreateUser"
+      operationId: CreateAdminUser
+      summary: "Cria usuário administrativo"
+      description: "Cria um usuário com payload JSON e inclui resposta adicional tipada"
       tags:
-        - V1
+        - Admin
+        - Users
       security:
         - JwtBearer: []
       requestBody:
@@ -46,6 +54,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreateUserResponse"
+        "409":
+          description: "Conflict"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserAlreadyExistsError"
+        "422":
+          description: "Unprocessable Entity"
+          content:
+            application/problem+json:
+              schema:
+                type: object
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -54,10 +74,12 @@ paths:
           $ref: "#/components/responses/InternalServerError"
   /v1/admin/users/{id}:
     delete:
-      operationId: deleteV1AdminUsersById
-      summary: "Delete DeleteUser"
+      operationId: DeleteAdminUser
+      summary: "Remove usuário"
+      description: "Remove um usuário administrativo pelo id"
       tags:
-        - V1
+        - Admin
+        - Users
       security:
         - JwtBearer: []
       parameters:
@@ -73,6 +95,99 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeleteUserResponse"
+        "404":
+          description: "Not Found"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserNotFoundError"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    put:
+      operationId: ReplaceAdminUserRole
+      summary: "Substitui role do usuário"
+      description: "Demonstra suporte ao MapPut com request tipado"
+      tags:
+        - Admin
+        - Users
+      security:
+        - JwtBearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRoleCommand"
+      responses:
+        "200":
+          description: "Successful response"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateUserRoleResponse"
+        "404":
+          description: "Not Found"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserNotFoundError"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+  /v1/admin/users/{id}/role:
+    patch:
+      operationId: UpdateAdminUserRole
+      summary: "Atualiza role do usuário"
+      description: "Demonstra suporte ao MapPatch com schema de request/response"
+      tags:
+        - Admin
+        - Users
+      security:
+        - JwtBearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRoleCommand"
+      responses:
+        "200":
+          description: "Successful response"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateUserRoleResponse"
+        "404":
+          description: "Not Found"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserNotFoundError"
+        "409":
+          description: "Conflict"
+          content:
+            application/problem+json:
+              schema:
+                type: object
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -84,19 +199,75 @@ components:
   schemas:
     CreateUserCommand:
       type: object
-      description: "Request type - properties to be documented"
+      properties:
+        email:
+          type: string
+        role:
+          type: string
+        displayName:
+          type: string
+      required:
+        - email
+        - role
     CreateUserResponse:
       type: object
-      description: "Response type - properties to be documented"
+      properties:
+        id:
+          type: string
+        message:
+          type: string
+      required:
+        - id
+        - message
     DeleteUserCommand:
       type: object
-      description: "Request type - properties to be documented"
+      properties:
+        id:
+          type: string
+      required:
+        - id
     DeleteUserResponse:
       type: object
-      description: "Response type - properties to be documented"
+      properties:
+        id:
+          type: string
+        message:
+          type: string
+      required:
+        - id
+        - message
     ListUsersCommand:
       type: object
       description: "Request type - properties to be documented"
     ListUsersResponse:
       type: object
-      description: "Response type - properties to be documented"
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserDto"
+      required:
+        - users
+    UpdateUserRoleCommand:
+      type: object
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+      required:
+        - id
+        - role
+    UpdateUserRoleResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+        message:
+          type: string
+      required:
+        - id
+        - role
+        - message

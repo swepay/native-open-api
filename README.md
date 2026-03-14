@@ -76,10 +76,20 @@ native-open-api/
 │   ├── Native.OpenApi.Tests/
 │   └── NativeLambdaRouter.SourceGenerator.OpenApi.Tests/
 ├── samples/
-│   └── SampleApiFunction/                             # Exemplo completo com AWS Lambda
+│   ├── SampleApiFunction/                             # Exemplo básico (single Lambda)
+│   └── MultiLambdaSample/                             # Exemplo completo cobrindo todos os recursos
 └── docs/
     └── CHANGELOG.md
 ```
+
+## Guia rápido de samples
+
+| Sample | Objetivo | Quando usar |
+|---|---|---|
+| `samples/SampleApiFunction` | Fluxo básico com uma única Lambda | Primeira adoção / setup rápido |
+| `samples/MultiLambdaSample` | Cobertura completa de features do Source Generator + NativeOpenApi | Arquitetura multi-Lambda, merge de specs e documentação centralizada |
+
+> Para humanos e agentes de IA, prefira começar por `samples/MultiLambdaSample/README.md` quando a meta for entender recursos avançados e fluxo completo de build/merge.
 
 ## Requisitos
 
@@ -94,6 +104,10 @@ cd native-open-api
 dotnet build
 dotnet test
 ```
+
+## Observação para MultiLambdaSample
+
+No cenário `AssemblyName=bootstrap`, faça build por projeto (na ordem) conforme documentado em `samples/MultiLambdaSample/README.md`.
 
 ## License
 
