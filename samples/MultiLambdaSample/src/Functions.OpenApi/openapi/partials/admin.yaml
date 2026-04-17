@@ -4,6 +4,23 @@ info:
   title: "Admin API"
   version: "1.0.0"
 
+x-swepay-error-catalog:
+  - code: "USER_ALREADY_EXISTS"
+    httpStatus: 409
+    userMessage: "Já existe um usuário com o e-mail informado."
+    recovery: "Use outro e-mail ou recupere o acesso do usuário existente."
+    docUrl: "https://docs.swepay.com.br/errors/USER_ALREADY_EXISTS"
+  - code: "USER_NOT_FOUND"
+    httpStatus: 404
+    userMessage: "Usuário não encontrado para o id informado."
+    recovery: "Verifique o id ou consulte GET /v1/admin/users."
+    docUrl: "https://docs.swepay.com.br/errors/USER_NOT_FOUND"
+  - code: "USER_ROLE_INVALID"
+    httpStatus: 422
+    userMessage: "O role informado não é válido para esse realm."
+    recovery: "Consulte a lista de roles em GET /v1/admin/roles e reenvie a requisição."
+    docUrl: "https://docs.swepay.com.br/errors/USER_ROLE_INVALID"
+
 paths:
   /v1/admin/users:
     get:
@@ -27,7 +44,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                type: object
+                $ref: "#/components/schemas/SwepayProblemDetails"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "500":
@@ -36,6 +53,8 @@ paths:
       operationId: CreateAdminUser
       summary: "Cria usuário administrativo"
       description: "Cria um usuário com payload JSON e inclui resposta adicional tipada"
+      x-swepay-errors:
+        - "USER_ROLE_INVALID"
       tags:
         - Admin
         - Users
@@ -47,6 +66,10 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateUserCommand"
+            examples:
+              happy-path:
+                summary: "Novo usuário com role existente"
+                externalValue: "examples/admin/create-user/happy.json"
       responses:
         "200":
           description: "Successful response"
@@ -54,18 +77,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreateUserResponse"
-        "409":
-          description: "Conflict"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserAlreadyExistsError"
         "422":
           description: "Unprocessable Entity"
           content:
             application/problem+json:
               schema:
-                type: object
+                $ref: "#/components/schemas/SwepayProblemDetails"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -95,12 +112,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DeleteUserResponse"
-        "404":
-          description: "Not Found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserNotFoundError"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -111,6 +122,10 @@ paths:
       operationId: ReplaceAdminUserRole
       summary: "Substitui role do usuário"
       description: "Demonstra suporte ao MapPut com request tipado"
+      deprecated: true
+      x-sunset: "2026-09-30"
+      x-swepay-alternative: "PATCH /v1/admin/users/{id}/role"
+      x-swepay-deprecation-reason: "PUT overwrote the full user; PATCH is scoped to the role field only."
       tags:
         - Admin
         - Users
@@ -135,12 +150,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UpdateUserRoleResponse"
-        "404":
-          description: "Not Found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserNotFoundError"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -152,6 +161,8 @@ paths:
       operationId: UpdateAdminUserRole
       summary: "Atualiza role do usuário"
       description: "Demonstra suporte ao MapPatch com schema de request/response"
+      x-swepay-errors:
+        - "USER_ALREADY_EXISTS"
       tags:
         - Admin
         - Users
@@ -168,7 +179,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateUserRoleCommand"
+              $ref: "#/components/schemas/PatchUserRoleCommand"
       responses:
         "200":
           description: "Successful response"
@@ -176,18 +187,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UpdateUserRoleResponse"
-        "404":
-          description: "Not Found"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UserNotFoundError"
         "409":
           description: "Conflict"
           content:
             application/problem+json:
               schema:
-                type: object
+                $ref: "#/components/schemas/SwepayProblemDetails"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -248,6 +253,16 @@ components:
             $ref: "#/components/schemas/UserDto"
       required:
         - users
+    PatchUserRoleCommand:
+      type: object
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+      required:
+        - id
+        - role
     UpdateUserRoleCommand:
       type: object
       properties:
@@ -271,3 +286,41 @@ components:
         - id
         - role
         - message
+    SwepayProblemDetails:
+      type: object
+      description: "Swepay error payload (RFC 9457 superset). Carries a machine-readable code, UX-written recovery hint and request correlation id."
+      properties:
+        type:
+          type: string
+          format: uri
+          description: "Canonical documentation URL for this error class."
+        title:
+          type: string
+          description: "Short, human-readable classification."
+        status:
+          type: integer
+          format: int32
+          description: "HTTP status code echoed into the body."
+        detail:
+          type: string
+          description: "End-user message. Never contains stack traces or internal identifiers."
+        instance:
+          type: string
+          description: "URI of the specific occurrence (usually the resource path)."
+        code:
+          type: string
+          description: "Machine-readable error code from the Swepay catalog."
+        recovery:
+          type: string
+          description: "Concrete next step the caller should take."
+        requestId:
+          type: string
+          description: "Correlation id, echoed from X-Request-Id when supplied."
+      required:
+        - type
+        - title
+        - status
+        - detail
+        - code
+        - recovery
+        - requestId

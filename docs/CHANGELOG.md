@@ -2,6 +2,112 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2026-04-16 — RFC Wave 1 (UX documentation)
+
+Implements Wave 1 of `docs/RFC-DOCUMENTACAO-UX.md`. All additions are opt-in; no
+existing API breaks. Principle O5 (full retrocompat) holds.
+
+### Added — Native.OpenApi
+
+- **`[HideFromDocs]`** attribute (`Native.OpenApi.Attributes`) — hides a command's
+  operation from the generated spec (RFC § F01).
+- **`.ExcludeFromDocs()`** fluent extension (`Native.OpenApi.Extensions.OpenApiRouteExtensions`)
+  — per-mapping sibling of `[HideFromDocs]`. Runtime-safe identity pass-through;
+  the source generator reacts to the syntactic presence of the call.
+- **`[Deprecated(sunset, alternative, reason)]`** attribute — emits
+  `deprecated: true` plus `x-sunset`, `x-swepay-alternative`,
+  `x-swepay-deprecation-reason` on the operation (RFC § F03).
+- **`[ApiExample(name, summary) { RequestJson, ResponseStatus, ResponseJson }]`**
+  attribute (multi-use) — declarative named examples (RFC § F09).
+- **`[ErrorCatalog(typeof(T))]`** + **`[ErrorDefinition(code, httpStatus, userMessage, recovery) { DocUrl }]`**
+  — declarative error catalog resolved by the generator across catalog classes (RFC § F12).
+- **`SwepayProblemDetails`** record in `Native.OpenApi.Models` — canonical error
+  payload (RFC 9457 superset with `code`, `recovery`, `requestId`); schema is
+  auto-emitted whenever any endpoint serves `application/problem+json` without a
+  typed body (RFC § F13).
+- **`OpenApiRendererOptions`** + `OpenApiBrandingOptions` + `OpenApiFooterOptions`
+  records — drive branding colour/logo/favicon/font, institutional footer links,
+  and optional Mermaid.js rendering (RFC §§ F15, F16, F17).
+- **`OpenApiHtmlRenderer.RenderRedoc(spec, title, options)`** and
+  **`RenderScalar(spec, title, options)`** overloads — apply the new options.
+  Legacy two-arg overloads preserved unchanged.
+
+### Added — NativeLambdaRouter.SourceGenerator.OpenApi
+
+- Attribute consumers for `[HideFromDocs]`, `[Deprecated]`, `[ApiExample]`,
+  `[ErrorCatalog]`; fluent-chain recognition of `.ExcludeFromDocs()`.
+- Cross-type resolution of `[ErrorDefinition]`-tagged fields in catalog classes;
+  per-operation `x-swepay-errors` slice and document-level `x-swepay-error-catalog`.
+- Automatic injection of `components.schemas.SwepayProblemDetails` whenever any
+  operation serves `application/problem+json` without a typed body (replaces the
+  former untyped `type: object` fallback).
+- New `CompilerVisibleProperty` MSBuild props: `OpenApiBrandPrimaryColor`,
+  `OpenApiBrandAccentColor`, `OpenApiBrandLogoUrl`, `OpenApiBrandFavicon`,
+  `OpenApiBrandFontFamily`, `OpenApiBrandThemeJson`, `OpenApiFooterStatusUrl`,
+  `OpenApiFooterSupportUrl`, `OpenApiFooterChangelogUrl`, `OpenApiFooterSlaUrl`,
+  `OpenApiFooterTermsUrl`, `OpenApiInlineAssets`, `OpenApiEnableMermaid`,
+  `OpenApiServerProduction`, `OpenApiServerSandbox`, `OpenApiDefaultAudience`.
+
+### Added — Samples
+
+- **`SampleApiFunction`**: new `SwepayErrors.cs` catalog; `[HideFromDocs]` on
+  `HealthCheckCommand`; `[Deprecated]` + `[ErrorCatalog]` on `GetItemsCommand`;
+  `[ApiExample]` + `[ErrorCatalog]` on `CreateItemCommand`; new
+  `/internal/diagnostics` route demonstrating fluent `.ExcludeFromDocs()`;
+  `[ApiResponse(422, null, "application/problem+json")]` on `CreateItemHandler`
+  to exercise F13 auto-injection.
+- **`MultiLambdaSample/Functions.Admin`**: new `SwepayErrors.cs`; `[Deprecated]`
+  on the legacy `PUT /v1/admin/users/{id}` (PATCH variant now lives on a new
+  `PatchUserRoleCommand` so only the PUT is marked deprecated); `[ApiExample]`
+  on `CreateUserCommand`; `[ErrorCatalog]` across all command types; internal
+  `.ExcludeFromDocs()` route at `/v1/admin/internal/users`.
+- **`MultiLambdaSample/Functions.OpenApi`**: Redoc and Scalar routes now
+  construct an `OpenApiRendererOptions` with Swepay brand colours, logo,
+  favicon, footer links (Status, Support, Changelog, SLA, Terms) and
+  `EnableMermaid = true`.
+
+### Rewrote — Documentation (agent-first UX)
+
+- Root `README.md`: decision tree, Wave 1 feature matrix, MSBuild property
+  table, end-to-end walkthrough, repository map. Agent-readable sections first;
+  humans get the same tables.
+- `src/Native.OpenApi/README.md`: API surface tables (attributes, extensions,
+  models, rendering, core classes); Wave 1 quick reference with YAML output
+  snippets.
+- `src/NativeLambdaRouter.SourceGenerator.OpenApi/README.md`: inspection
+  surface, precedence rule, MSBuild property table, multi-project recipe for
+  `AssemblyName=bootstrap`.
+
+### Changed
+
+- `problem+json` responses now `$ref` the shared `SwepayProblemDetails` schema
+  instead of emitting inline `type: object` — only when no typed body was
+  declared. Consumers serializing `ProblemDetails` into responses that declare
+  a type are unaffected. When migrating, `SwepayProblemDetails` is a strict
+  superset of RFC 9457 (same field set plus `code`, `recovery`, `requestId`).
+- `OpenApiYamlGenerator.Generate(...)` gains an `errorCatalog` parameter.
+  A backwards-compatible zero-catalog overload is kept for existing callers.
+
+### Fixed
+
+- XML documentation warnings on `ApplyProduces` (unescaped generic) and on
+  `OpenApiRouteExtensions` class-level `paramref`. Docs now build clean.
+
+### Known limitations / deferred to Wave 2
+
+- `[ApiExample]` payloads are referenced via `externalValue` today; inline payload
+  read from embedded resources at generation time is a Wave 2 follow-up (requires
+  wiring JSON files as `AdditionalFiles` in the consumer `.csproj`).
+- Mermaid rendering in Redoc is implemented via a post-mount `MutationObserver`
+  (no template fork). Trade-off documented in RFC Open Question #2.
+- Flow (F05) / State Machine (F06) extensions consumed by the Mermaid pre-processor
+  are emitted by Wave 2 — the renderer already scans for `` ```mermaid `` blocks in
+  descriptions today.
+- F03 Redoc deprecation banner and F12 "Error Catalog" filterable table are
+  rendered natively / raw-only for now (Redoc shows the `deprecated` badge;
+  `x-swepay-error-catalog` is present in the YAML but not styled by the
+  template). Banner + table UI are Wave 2 renderer follow-ups.
+
 ## [1.6.0] - 2026-02-22
 
 ### Added

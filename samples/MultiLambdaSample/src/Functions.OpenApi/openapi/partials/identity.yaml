@@ -49,20 +49,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LoginResponse"
-        "401":
-          description: "Unauthorized"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/InvalidCredentialsError"
         "429":
           description: "Response 429"
           content:
             application/problem+json:
               schema:
-                type: object
+                $ref: "#/components/schemas/SwepayProblemDetails"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalServerError"
   /v1/auth/refresh:
@@ -97,12 +93,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RefreshTokenResponse"
-        "422":
-          description: "Unprocessable Entity"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ValidationProblemError"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -136,7 +126,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                type: object
+                $ref: "#/components/schemas/SwepayProblemDetails"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "500":
@@ -229,3 +219,41 @@ components:
       required:
         - userId
         - message
+    SwepayProblemDetails:
+      type: object
+      description: "Swepay error payload (RFC 9457 superset). Carries a machine-readable code, UX-written recovery hint and request correlation id."
+      properties:
+        type:
+          type: string
+          format: uri
+          description: "Canonical documentation URL for this error class."
+        title:
+          type: string
+          description: "Short, human-readable classification."
+        status:
+          type: integer
+          format: int32
+          description: "HTTP status code echoed into the body."
+        detail:
+          type: string
+          description: "End-user message. Never contains stack traces or internal identifiers."
+        instance:
+          type: string
+          description: "URI of the specific occurrence (usually the resource path)."
+        code:
+          type: string
+          description: "Machine-readable error code from the Swepay catalog."
+        recovery:
+          type: string
+          description: "Concrete next step the caller should take."
+        requestId:
+          type: string
+          description: "Correlation id, echoed from X-Request-Id when supplied."
+      required:
+        - type
+        - title
+        - status
+        - detail
+        - code
+        - recovery
+        - requestId

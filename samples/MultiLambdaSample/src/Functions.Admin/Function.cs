@@ -1,6 +1,7 @@
 using Amazon.Lambda.Core;
 using NativeMediator;
 using NativeLambdaRouter;
+using Native.OpenApi.Extensions;
 using Functions.Admin.Commands;
 using Functions.Admin.Responses;
 using System.Text.Json;
@@ -49,12 +50,12 @@ public sealed class Function : RoutedApiGatewayFunction
             .WithTags("Admin", "Users")
             .Produces<UserNotFoundError>(404);
 
-        routes.MapPatch<UpdateUserRoleCommand, UpdateUserRoleResponse>(
+        routes.MapPatch<PatchUserRoleCommand, UpdateUserRoleResponse>(
             "/v1/admin/users/{id}/role",
             ctx =>
             {
                 var request = JsonSerializer.Deserialize(ctx.Body!, AdminJsonContext.Default.UpdateUserRoleCommand)!;
-                return new UpdateUserRoleCommand
+                return new PatchUserRoleCommand
                 {
                     Id = ctx.PathParameters["id"],
                     Role = request.Role
@@ -74,6 +75,13 @@ public sealed class Function : RoutedApiGatewayFunction
             .WithDescription("Remove um usuário administrativo pelo id")
             .WithTags("Admin", "Users")
             .Produces<UserNotFoundError>(404);
+
+        // RFC § F01 — internal diagnostic route kept out of partner docs
+        // via the fluent .ExcludeFromDocs() marker.
+        routes.MapGet<ListUsersCommand, ListUsersResponse>(
+            "/v1/admin/internal/users", ctx => new ListUsersCommand())
+            .WithName("InternalListUsers")
+            .ExcludeFromDocs();
     }
 
     protected override async Task<object> ExecuteCommandAsync(RouteMatch match, RouteContext context, IMediator mediator)
@@ -84,6 +92,7 @@ public sealed class Function : RoutedApiGatewayFunction
             ListUsersCommand cmd => await mediator.Send(cmd),
             CreateUserCommand cmd => await mediator.Send(cmd),
             UpdateUserRoleCommand cmd => await mediator.Send(cmd),
+            PatchUserRoleCommand cmd => await mediator.Send(cmd),
             DeleteUserCommand cmd => await mediator.Send(cmd),
             _ => throw new InvalidOperationException($"Unknown command: {command.GetType().Name}")
         };

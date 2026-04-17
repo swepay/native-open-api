@@ -41,3 +41,12 @@ public sealed class UpdateUserRoleHandler : IRequestHandler<UpdateUserRoleComman
             new UpdateUserRoleResponse(request.Id, request.Role, $"Role for user '{request.Id}' updated to '{request.Role}'"));
     }
 }
+
+public sealed class PatchUserRoleHandler : IRequestHandler<PatchUserRoleCommand, UpdateUserRoleResponse>
+{
+    public ValueTask<UpdateUserRoleResponse> Handle(PatchUserRoleCommand request, CancellationToken cancellationToken)
+    {
+        return new ValueTask<UpdateUserRoleResponse>(
+            new UpdateUserRoleResponse(request.Id, request.Role, $"Role for user '{request.Id}' patched to '{request.Role}'"));
+    }
+}

@@ -1,7 +1,42 @@
 <Project>
   <ItemGroup>
-    <!-- Expose OpenApiSpecName and OpenApiSpecTitle as global analyzer config options -->
+    <!-- Original properties (pre-Wave-1) -->
     <CompilerVisibleProperty Include="OpenApiSpecName" />
     <CompilerVisibleProperty Include="OpenApiSpecTitle" />
+
+    <!--
+      RFC-DOCUMENTACAO-UX Wave 1 — renderer-facing properties.
+      These are read by the consumer host at runtime (via IConfiguration or a
+      strongly-typed options binder), not by the Source Generator. They are
+      exposed as CompilerVisibleProperty so that a future generator version
+      can embed them as constants into the generated spec provider when
+      air-gapped deployments require it.
+    -->
+
+    <!-- F15 — Branding -->
+    <CompilerVisibleProperty Include="OpenApiBrandPrimaryColor" />
+    <CompilerVisibleProperty Include="OpenApiBrandAccentColor" />
+    <CompilerVisibleProperty Include="OpenApiBrandLogoUrl" />
+    <CompilerVisibleProperty Include="OpenApiBrandFavicon" />
+    <CompilerVisibleProperty Include="OpenApiBrandFontFamily" />
+    <CompilerVisibleProperty Include="OpenApiBrandThemeJson" />
+
+    <!-- F16 — Footer -->
+    <CompilerVisibleProperty Include="OpenApiFooterStatusUrl" />
+    <CompilerVisibleProperty Include="OpenApiFooterSupportUrl" />
+    <CompilerVisibleProperty Include="OpenApiFooterChangelogUrl" />
+    <CompilerVisibleProperty Include="OpenApiFooterSlaUrl" />
+    <CompilerVisibleProperty Include="OpenApiFooterTermsUrl" />
+
+    <!-- F17 — Renderer behaviour / air-gap -->
+    <CompilerVisibleProperty Include="OpenApiInlineAssets" />
+    <CompilerVisibleProperty Include="OpenApiEnableMermaid" />
+
+    <!-- F19 (backlog, prop reserved for forward-compat) — Servers -->
+    <CompilerVisibleProperty Include="OpenApiServerProduction" />
+    <CompilerVisibleProperty Include="OpenApiServerSandbox" />
+
+    <!-- F02 (wave 3, prop reserved for forward-compat) — default audience filter -->
+    <CompilerVisibleProperty Include="OpenApiDefaultAudience" />
   </ItemGroup>
 </Project>

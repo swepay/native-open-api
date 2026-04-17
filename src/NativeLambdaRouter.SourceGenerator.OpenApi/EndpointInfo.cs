@@ -110,4 +110,76 @@ internal sealed class EndpointInfo
     /// The line number where this endpoint was defined.
     /// </summary>
     public int LineNumber { get; set; }
+
+    // ------------------------------------------------------------------
+    // RFC-DOCUMENTACAO-UX § Wave 1 additions.
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// True when the endpoint should be omitted from the generated YAML.
+    /// Set by <c>[HideFromDocs]</c> on the TCommand or by
+    /// <c>.ExcludeFromDocs()</c> in the fluent chain (RFC § F01).
+    /// </summary>
+    public bool ExcludedFromDocs { get; set; }
+
+    /// <summary>
+    /// Deprecation metadata resolved from <c>[Deprecated]</c> on the TCommand.
+    /// <c>null</c> when the endpoint is not deprecated (RFC § F03).
+    /// </summary>
+    public DeprecationInfo? Deprecation { get; set; }
+
+    /// <summary>
+    /// Named examples resolved from one or more <c>[ApiExample]</c> attributes
+    /// on the TCommand (RFC § F09). Empty when none.
+    /// </summary>
+    public List<ApiExampleInfo> Examples { get; set; } = new();
+
+    /// <summary>
+    /// Fully-qualified type name of the catalog referenced via
+    /// <c>[ErrorCatalog(typeof(...))]</c>, or <c>null</c> (RFC § F12).
+    /// </summary>
+    public string? ErrorCatalogTypeName { get; set; }
+
+    /// <summary>
+    /// Subset of error codes (from the catalog) whose <c>httpStatus</c> matches
+    /// at least one response declared on this endpoint. Emitted as
+    /// <c>x-swepay-errors</c>.
+    /// </summary>
+    public List<string> MatchedErrorCodes { get; set; } = new();
+}
+
+/// <summary>
+/// Deprecation metadata captured from <c>[Deprecated(sunset, alternative, reason)]</c>.
+/// </summary>
+internal sealed class DeprecationInfo
+{
+    public string Sunset { get; set; } = "";
+    public string Alternative { get; set; } = "";
+    public string Reason { get; set; } = "";
+}
+
+/// <summary>
+/// Named example captured from an <c>[ApiExample]</c> attribute.
+/// </summary>
+internal sealed class ApiExampleInfo
+{
+    public string Name { get; set; } = "";
+    public string Summary { get; set; } = "";
+    public string? RequestJsonPath { get; set; }
+    public int ResponseStatus { get; set; }
+    public string? ResponseJsonPath { get; set; }
+}
+
+/// <summary>
+/// Entry captured from a field tagged with
+/// <c>[ErrorDefinition(code, httpStatus, userMessage, recovery, docUrl?)]</c>
+/// inside a catalog class.
+/// </summary>
+internal sealed class ErrorCatalogEntry
+{
+    public string Code { get; set; } = "";
+    public int HttpStatus { get; set; }
+    public string UserMessage { get; set; } = "";
+    public string Recovery { get; set; } = "";
+    public string? DocUrl { get; set; }
 }

@@ -10,9 +10,23 @@ namespace NativeLambdaRouter.SourceGenerator.OpenApi;
 internal static class OpenApiYamlGenerator
 {
     /// <summary>
-    /// Generates OpenAPI YAML content for the given endpoints.
+    /// Overload kept for back-compat with call sites outside this assembly
+    /// that have not yet adopted the Wave 1 signature.
     /// </summary>
     public static string Generate(IReadOnlyList<EndpointInfo> endpoints, string apiTitle, string apiVersion)
+        => Generate(endpoints, apiTitle, apiVersion, new List<ErrorCatalogEntry>());
+
+    /// <summary>
+    /// Generates OpenAPI YAML content for the given endpoints, with RFC Wave 1
+    /// enrichments: deprecation metadata (F03), named examples (F09), error
+    /// catalog (F12), and the <c>SwepayProblemDetails</c> schema auto-injected
+    /// when any endpoint serves <c>application/problem+json</c> (F13).
+    /// </summary>
+    public static string Generate(
+        IReadOnlyList<EndpointInfo> endpoints,
+        string apiTitle,
+        string apiVersion,
+        IReadOnlyList<ErrorCatalogEntry> errorCatalog)
     {
         var sb = new StringBuilder();
 
@@ -23,6 +37,25 @@ internal static class OpenApiYamlGenerator
         sb.AppendLine($"  title: \"{apiTitle}\"");
         sb.AppendLine($"  version: \"{apiVersion}\"");
         sb.AppendLine();
+
+        // RFC § F12 — document-level error catalog. Emitted before paths so Redoc
+        // can resolve x-swepay-errors references without waiting for operations.
+        if (errorCatalog.Count > 0)
+        {
+            sb.AppendLine("x-swepay-error-catalog:");
+            foreach (var entry in errorCatalog)
+            {
+                sb.AppendLine($"  - code: \"{EscapeYamlString(entry.Code)}\"");
+                sb.AppendLine($"    httpStatus: {entry.HttpStatus}");
+                sb.AppendLine($"    userMessage: \"{EscapeYamlString(entry.UserMessage)}\"");
+                sb.AppendLine($"    recovery: \"{EscapeYamlString(entry.Recovery)}\"");
+                if (!string.IsNullOrEmpty(entry.DocUrl))
+                {
+                    sb.AppendLine($"    docUrl: \"{EscapeYamlString(entry.DocUrl!)}\"");
+                }
+            }
+            sb.AppendLine();
+        }
 
         // Paths
         sb.AppendLine("paths:");
@@ -49,6 +82,25 @@ internal static class OpenApiYamlGenerator
                 if (endpoint.Description != null)
                 {
                     sb.AppendLine($"      description: \"{EscapeYamlString(endpoint.Description)}\"");
+                }
+
+                // RFC § F03 — deprecation block.
+                if (endpoint.Deprecation != null)
+                {
+                    sb.AppendLine("      deprecated: true");
+                    sb.AppendLine($"      x-sunset: \"{EscapeYamlString(endpoint.Deprecation.Sunset)}\"");
+                    sb.AppendLine($"      x-swepay-alternative: \"{EscapeYamlString(endpoint.Deprecation.Alternative)}\"");
+                    sb.AppendLine($"      x-swepay-deprecation-reason: \"{EscapeYamlString(endpoint.Deprecation.Reason)}\"");
+                }
+
+                // RFC § F12 — slice of catalog codes that apply to this operation.
+                if (endpoint.MatchedErrorCodes.Count > 0)
+                {
+                    sb.AppendLine("      x-swepay-errors:");
+                    foreach (var code in endpoint.MatchedErrorCodes)
+                    {
+                        sb.AppendLine($"        - \"{EscapeYamlString(code)}\"");
+                    }
                 }
 
                 // Tags — from metadata or auto-generated from path
@@ -114,6 +166,10 @@ internal static class OpenApiYamlGenerator
                     {
                         sb.AppendLine($"              $ref: \"#/components/schemas/{endpoint.CommandSimpleName}\"");
                     }
+
+                    // RFC § F09 — request-side named examples (externalValue reference,
+                    // resolved by the docs host; embedded-resource inlining is a Wave 2 follow-up).
+                    AppendRequestExamples(sb, endpoint);
                 }
 
                 // Responses
@@ -132,6 +188,8 @@ internal static class OpenApiYamlGenerator
                     sb.AppendLine($"            {contentType}:");
                     sb.AppendLine("              schema:");
                     sb.AppendLine($"                $ref: \"#/components/schemas/{endpoint.ResponseSimpleName}\"");
+                    // RFC § F09 — attach any example whose responseStatus == 200.
+                    AppendResponseExamples(sb, endpoint, 200);
                 }
 
                 // Additional .Produces<T>() / .ProducesProblem() responses
@@ -146,13 +204,16 @@ internal static class OpenApiYamlGenerator
                         sb.AppendLine($"            {produces.ContentType}:");
                         sb.AppendLine("              schema:");
                         sb.AppendLine($"                $ref: \"#/components/schemas/{produces.ResponseTypeSimpleName}\"");
+                        AppendResponseExamples(sb, endpoint, produces.StatusCode);
                     }
                     else if (produces.ContentType == "application/problem+json")
                     {
+                        // RFC § F13 — point all problem+json responses at the shared schema.
                         sb.AppendLine("          content:");
                         sb.AppendLine($"            {produces.ContentType}:");
                         sb.AppendLine("              schema:");
-                        sb.AppendLine("                type: object");
+                        sb.AppendLine("                $ref: \"#/components/schemas/SwepayProblemDetails\"");
+                        AppendResponseExamples(sb, endpoint, produces.StatusCode);
                     }
                 }
 
@@ -198,7 +259,118 @@ internal static class OpenApiYamlGenerator
             }
         }
 
+        // RFC § F13 — inject the canonical SwepayProblemDetails schema when any
+        // endpoint advertises application/problem+json. The check also covers
+        // cases where only some operations carry problem+json content so we do
+        // not leak an unused schema when nobody references it.
+        if (AnyProblemJsonResponse(endpoints))
+        {
+            AppendSwepayProblemDetailsSchema(sb);
+        }
+
         return sb.ToString();
+    }
+
+    private static bool AnyProblemJsonResponse(IReadOnlyList<EndpointInfo> endpoints)
+    {
+        foreach (var endpoint in endpoints)
+        {
+            foreach (var produces in endpoint.AdditionalProduces)
+            {
+                if (produces.ContentType == "application/problem+json") return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Emits the <c>SwepayProblemDetails</c> schema — superset of RFC 9457 with
+    /// <c>code</c>, <c>recovery</c> and <c>requestId</c>. Matches the record in
+    /// <c>Native.OpenApi.Models.SwepayProblemDetails</c>.
+    /// </summary>
+    private static void AppendSwepayProblemDetailsSchema(StringBuilder sb)
+    {
+        sb.AppendLine("    SwepayProblemDetails:");
+        sb.AppendLine("      type: object");
+        sb.AppendLine("      description: \"Swepay error payload (RFC 9457 superset). Carries a machine-readable code, UX-written recovery hint and request correlation id.\"");
+        sb.AppendLine("      properties:");
+        sb.AppendLine("        type:");
+        sb.AppendLine("          type: string");
+        sb.AppendLine("          format: uri");
+        sb.AppendLine("          description: \"Canonical documentation URL for this error class.\"");
+        sb.AppendLine("        title:");
+        sb.AppendLine("          type: string");
+        sb.AppendLine("          description: \"Short, human-readable classification.\"");
+        sb.AppendLine("        status:");
+        sb.AppendLine("          type: integer");
+        sb.AppendLine("          format: int32");
+        sb.AppendLine("          description: \"HTTP status code echoed into the body.\"");
+        sb.AppendLine("        detail:");
+        sb.AppendLine("          type: string");
+        sb.AppendLine("          description: \"End-user message. Never contains stack traces or internal identifiers.\"");
+        sb.AppendLine("        instance:");
+        sb.AppendLine("          type: string");
+        sb.AppendLine("          description: \"URI of the specific occurrence (usually the resource path).\"");
+        sb.AppendLine("        code:");
+        sb.AppendLine("          type: string");
+        sb.AppendLine("          description: \"Machine-readable error code from the Swepay catalog.\"");
+        sb.AppendLine("        recovery:");
+        sb.AppendLine("          type: string");
+        sb.AppendLine("          description: \"Concrete next step the caller should take.\"");
+        sb.AppendLine("        requestId:");
+        sb.AppendLine("          type: string");
+        sb.AppendLine("          description: \"Correlation id, echoed from X-Request-Id when supplied.\"");
+        sb.AppendLine("      required:");
+        sb.AppendLine("        - type");
+        sb.AppendLine("        - title");
+        sb.AppendLine("        - status");
+        sb.AppendLine("        - detail");
+        sb.AppendLine("        - code");
+        sb.AppendLine("        - recovery");
+        sb.AppendLine("        - requestId");
+    }
+
+    /// <summary>
+    /// Emits the <c>examples</c> sub-node of a request body, using
+    /// <c>externalValue</c> to reference the embedded JSON file path.
+    /// </summary>
+    /// <remarks>
+    /// Skips examples whose <c>RequestJsonPath</c> is null (response-only
+    /// scenarios). The renderer / docs host is responsible for serving the
+    /// referenced path — inline-payload support is a Wave 2 follow-up.
+    /// </remarks>
+    private static void AppendRequestExamples(StringBuilder sb, EndpointInfo endpoint)
+    {
+        var withRequest = endpoint.Examples.Where(e => !string.IsNullOrEmpty(e.RequestJsonPath)).ToList();
+        if (withRequest.Count == 0) return;
+
+        sb.AppendLine("            examples:");
+        foreach (var example in withRequest)
+        {
+            sb.AppendLine($"              {example.Name}:");
+            sb.AppendLine($"                summary: \"{EscapeYamlString(example.Summary)}\"");
+            sb.AppendLine($"                externalValue: \"{EscapeYamlString(example.RequestJsonPath!)}\"");
+        }
+    }
+
+    /// <summary>
+    /// Emits the <c>examples</c> sub-node of a response block, filtered by the
+    /// current status code.
+    /// </summary>
+    private static void AppendResponseExamples(StringBuilder sb, EndpointInfo endpoint, int statusCode)
+    {
+        var matching = endpoint.Examples
+            .Where(e => e.ResponseStatus == statusCode && !string.IsNullOrEmpty(e.ResponseJsonPath))
+            .ToList();
+        if (matching.Count == 0) return;
+
+        sb.AppendLine("              examples:");
+        foreach (var example in matching)
+        {
+            sb.AppendLine($"                {example.Name}:");
+            sb.AppendLine($"                  summary: \"{EscapeYamlString(example.Summary)}\"");
+            sb.AppendLine($"                  externalValue: \"{EscapeYamlString(example.ResponseJsonPath!)}\"");
+        }
     }
 
     /// <summary>

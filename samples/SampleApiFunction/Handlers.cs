@@ -37,6 +37,9 @@ public sealed class GetItemByIdHandler : IRequestHandler<Commands.GetItemByIdCom
 public sealed class CreateItemHandler : IRequestHandler<Commands.CreateItemCommand, Responses.CreateItemResponse>
 {
     [ApiResponse(201, typeof(CreateItemResponse), "application/json")]
+    // 422 with null responseType + application/problem+json triggers the
+    // auto-injected SwepayProblemDetails schema (RFC § F13).
+    [ApiResponse(422, null, "application/problem+json")]
     [ApiResponse(400, typeof(ProblemDetails), "application/problem+json")]
     [ApiResponse(500, typeof(ProblemDetails), "application/problem+json")]
     public ValueTask<Responses.CreateItemResponse> Handle(Commands.CreateItemCommand request, CancellationToken cancellationToken)
@@ -80,6 +83,15 @@ public sealed class HealthCheckHandler : IRequestHandler<Commands.HealthCheckCom
     {
         return new ValueTask<Responses.HealthCheckResponse>(
             new Responses.HealthCheckResponse("healthy", DateTime.UtcNow.ToString("o")));
+    }
+}
+
+public sealed class InternalDiagnosticsHandler : IRequestHandler<Commands.InternalDiagnosticsCommand, Responses.HealthCheckResponse>
+{
+    public ValueTask<Responses.HealthCheckResponse> Handle(Commands.InternalDiagnosticsCommand request, CancellationToken cancellationToken)
+    {
+        return new ValueTask<Responses.HealthCheckResponse>(
+            new Responses.HealthCheckResponse("ok", DateTime.UtcNow.ToString("o")));
     }
 }
 

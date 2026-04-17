@@ -1,6 +1,7 @@
 using Amazon.Lambda.Core;
 using NativeMediator;
 using NativeLambdaRouter;
+using Native.OpenApi.Extensions;
 using SampleApiFunction.Commands;
 using SampleApiFunction.Responses;
 using System.Text.Json;
@@ -18,7 +19,7 @@ public sealed class Function : RoutedApiGatewayFunction
 
     protected override void ConfigureRoutes(IRouteBuilder routes)
     {
-        // GET /v1/items
+        // GET /v1/items — deprecated via [Deprecated] on GetItemsCommand.
         routes.MapGet<GetItemsCommand, GetItemsResponse>(
             "/v1/items",
             ctx => new GetItemsCommand());
@@ -28,7 +29,8 @@ public sealed class Function : RoutedApiGatewayFunction
             "/v1/items/{id}",
             ctx => new GetItemByIdCommand(ctx.PathParameters["id"]));
 
-        // POST /v1/items
+        // POST /v1/items — the 422 response on the handler has no typed body;
+        // the generator points it at SwepayProblemDetails (RFC § F13).
         routes.MapPost<CreateItemCommand, CreateItemResponse>(
             "/v1/items",
             ctx => JsonSerializer.Deserialize(ctx.Body!, AppJsonContext.Default.CreateItemCommand)!);
@@ -45,10 +47,17 @@ public sealed class Function : RoutedApiGatewayFunction
             "/v1/items/{id}",
             ctx => new DeleteItemCommand(ctx.PathParameters["id"]));
 
-        // Health check endpoint
+        // RFC § F01 — hidden via [HideFromDocs] on the TCommand.
         routes.MapGet<HealthCheckCommand, Responses.HealthCheckResponse>(
             "/health",
             ctx => new HealthCheckCommand());
+
+        // RFC § F01 — hidden via the fluent .ExcludeFromDocs() marker on the
+        // route (alternative to annotating the TCommand).
+        routes.MapGet<InternalDiagnosticsCommand, Responses.HealthCheckResponse>(
+            "/internal/diagnostics",
+            ctx => new InternalDiagnosticsCommand())
+            .ExcludeFromDocs();
     }
 
     protected override async Task<object> ExecuteCommandAsync(RouteMatch match, RouteContext context, IMediator mediator)
@@ -63,6 +72,7 @@ public sealed class Function : RoutedApiGatewayFunction
             UpdateItemCommand cmd => await mediator.Send(cmd),
             DeleteItemCommand cmd => await mediator.Send(cmd),
             HealthCheckCommand cmd => await mediator.Send(cmd),
+            InternalDiagnosticsCommand cmd => await mediator.Send(cmd),
             _ => throw new InvalidOperationException($"Unknown command: {command.GetType().Name}")
         };
     }

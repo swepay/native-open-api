@@ -297,6 +297,11 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
                 case "Accepts":
                     endpoint.AcceptsContentType = ExtractFirstStringArgument(parentInvocation);
                     break;
+
+                // RFC-DOCUMENTACAO-UX § F01: per-mapping exclusion marker.
+                case "ExcludeFromDocs":
+                    endpoint.ExcludedFromDocs = true;
+                    break;
             }
 
             current = parentInvocation;
@@ -328,7 +333,7 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Handles .Produces(contentType) or .Produces<T>(contentType).
+    /// Handles <c>.Produces(contentType)</c> or <c>.Produces&lt;T&gt;(contentType)</c>.
     /// Sets the content type for the default 200 response.
     /// </summary>
     private static void ApplyProduces(InvocationExpressionSyntax invocation, EndpointInfo endpoint)
@@ -440,8 +445,118 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
                     if (attr.ConstructorArguments.Length > 0 && attr.ConstructorArguments[0].Value is string accepts)
                         endpoint.AcceptsContentType = accepts;
                     break;
+
+                // RFC § F01 — type-level exclusion.
+                case "HideFromDocsAttribute":
+                    endpoint.ExcludedFromDocs = true;
+                    break;
+
+                // RFC § F03 — deprecated (sunset, alternative, reason).
+                case "DeprecatedAttribute":
+                    if (attr.ConstructorArguments.Length >= 3
+                        && attr.ConstructorArguments[0].Value is string sunset
+                        && attr.ConstructorArguments[1].Value is string alternative
+                        && attr.ConstructorArguments[2].Value is string reason)
+                    {
+                        endpoint.Deprecation = new DeprecationInfo
+                        {
+                            Sunset = sunset,
+                            Alternative = alternative,
+                            Reason = reason
+                        };
+                    }
+                    break;
+
+                // RFC § F09 — repeatable named example.
+                case "ApiExampleAttribute":
+                    var example = ExtractApiExample(attr);
+                    if (example != null) endpoint.Examples.Add(example);
+                    break;
+
+                // RFC § F12 — typed catalog reference (resolution deferred to Execute).
+                case "ErrorCatalogAttribute":
+                    if (attr.ConstructorArguments.Length > 0
+                        && attr.ConstructorArguments[0].Value is INamedTypeSymbol catalogSym)
+                    {
+                        endpoint.ErrorCatalogTypeName = catalogSym.ToDisplayString();
+                    }
+                    break;
             }
         }
+    }
+
+    /// <summary>
+    /// Maps the constructor args + named args of an <c>[ApiExample]</c> attribute
+    /// to an <see cref="ApiExampleInfo"/>. Returns <c>null</c> if the mandatory
+    /// <c>name</c>/<c>summary</c> positional args are missing.
+    /// </summary>
+    private static ApiExampleInfo? ExtractApiExample(AttributeData attr)
+    {
+        if (attr.ConstructorArguments.Length < 2) return null;
+        if (attr.ConstructorArguments[0].Value is not string name) return null;
+        if (attr.ConstructorArguments[1].Value is not string summary) return null;
+
+        var info = new ApiExampleInfo { Name = name, Summary = summary };
+        foreach (var named in attr.NamedArguments)
+        {
+            switch (named.Key)
+            {
+                case "RequestJson" when named.Value.Value is string rj:
+                    info.RequestJsonPath = rj;
+                    break;
+                case "ResponseStatus" when named.Value.Value is int rs:
+                    info.ResponseStatus = rs;
+                    break;
+                case "ResponseJson" when named.Value.Value is string rsp:
+                    info.ResponseJsonPath = rsp;
+                    break;
+            }
+        }
+        return info;
+    }
+
+    /// <summary>
+    /// Walks the fields of a catalog type looking for
+    /// <c>[ErrorDefinition(code, httpStatus, userMessage, recovery)]</c> with
+    /// an optional named <c>DocUrl</c>.
+    /// </summary>
+    /// <remarks>
+    /// Called from <see cref="Execute"/> once per distinct catalog type, so
+    /// we never pay the resolution cost per endpoint.
+    /// </remarks>
+    private static List<ErrorCatalogEntry> ResolveCatalogEntries(INamedTypeSymbol catalogType)
+    {
+        var entries = new List<ErrorCatalogEntry>();
+        foreach (var member in catalogType.GetMembers())
+        {
+            if (member is not IFieldSymbol field) continue;
+            foreach (var attr in field.GetAttributes())
+            {
+                if (attr.AttributeClass?.Name != "ErrorDefinitionAttribute") continue;
+                if (attr.ConstructorArguments.Length < 4) continue;
+
+                if (attr.ConstructorArguments[0].Value is not string code) continue;
+                if (attr.ConstructorArguments[1].Value is not int http) continue;
+                if (attr.ConstructorArguments[2].Value is not string userMessage) continue;
+                if (attr.ConstructorArguments[3].Value is not string recovery) continue;
+
+                string? docUrl = null;
+                foreach (var named in attr.NamedArguments)
+                {
+                    if (named.Key == "DocUrl" && named.Value.Value is string du) docUrl = du;
+                }
+
+                entries.Add(new ErrorCatalogEntry
+                {
+                    Code = code,
+                    HttpStatus = http,
+                    UserMessage = userMessage,
+                    Recovery = recovery,
+                    DocUrl = docUrl
+                });
+            }
+        }
+        return entries;
     }
 
     /// <summary>
@@ -662,8 +777,53 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
 
         var generatedNamespace = baseName + ".Generated";
 
+        // RFC § F01 — strip hidden endpoints before handing the list to the YAML generator.
+        // Paths that lose all their operations are dropped naturally by the generator's
+        // GroupBy / empty-group suppression.
+        var publicEndpoints = endpoints.Where(e => !e.ExcludedFromDocs).ToList();
+
+        // RFC § F12 — resolve every distinct ErrorCatalog type referenced by the endpoints
+        // exactly once, and attach the slice of codes whose httpStatus matches a declared
+        // response on each endpoint. The merged catalog (all codes, de-duped) is emitted
+        // at document root as x-swepay-error-catalog.
+        var catalogsByTypeName = new Dictionary<string, List<ErrorCatalogEntry>>(StringComparer.Ordinal);
+        foreach (var endpoint in publicEndpoints)
+        {
+            if (string.IsNullOrEmpty(endpoint.ErrorCatalogTypeName)) continue;
+            if (catalogsByTypeName.ContainsKey(endpoint.ErrorCatalogTypeName!)) continue;
+
+            var catalogSymbol = compilation.GetTypeByMetadataName(endpoint.ErrorCatalogTypeName!);
+            if (catalogSymbol == null) continue;
+
+            catalogsByTypeName[endpoint.ErrorCatalogTypeName!] = ResolveCatalogEntries(catalogSymbol);
+        }
+
+        // Produce the per-endpoint matched-code slice.
+        foreach (var endpoint in publicEndpoints)
+        {
+            if (endpoint.ErrorCatalogTypeName == null) continue;
+            if (!catalogsByTypeName.TryGetValue(endpoint.ErrorCatalogTypeName, out var entries)) continue;
+
+            var declaredStatus = new HashSet<int>(endpoint.AdditionalProduces.Select(p => p.StatusCode));
+            foreach (var entry in entries)
+            {
+                if (declaredStatus.Contains(entry.HttpStatus))
+                {
+                    endpoint.MatchedErrorCodes.Add(entry.Code);
+                }
+            }
+        }
+
+        // De-duped, ordered, unified catalog for root emission.
+        var unifiedCatalog = catalogsByTypeName.Values
+            .SelectMany(list => list)
+            .GroupBy(e => e.Code, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .OrderBy(e => e.Code, StringComparer.Ordinal)
+            .ToList();
+
         // Generate OpenAPI YAML
-        var yaml = OpenApiYamlGenerator.Generate(endpoints.ToList(), apiTitle, "1.0.0");
+        var yaml = OpenApiYamlGenerator.Generate(publicEndpoints, apiTitle, "1.0.0", unifiedCatalog);
 
         // Check if Native.OpenApi is referenced (for IGeneratedOpenApiSpec support)
         var hasNativeOpenApi = compilation.ReferencedAssemblyNames

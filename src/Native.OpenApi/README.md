@@ -3,16 +3,63 @@
 [![NuGet](https://img.shields.io/nuget/v/NativeOpenApi.svg)](https://www.nuget.org/packages/NativeOpenApi)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-OpenAPI 3.1 document loading, linting, merging, and rendering abstractions for .NET 10 Native AOT applications.
+OpenAPI 3.1 primitives for Native AOT .NET 10 — document loading, linting,
+merging, HTML rendering, and a catalog of UX attributes consumed by
+[`NativeLambdaRouter.SourceGenerator.OpenApi`](../NativeLambdaRouter.SourceGenerator.OpenApi/).
 
-## Features
+- **Version:** `1.7.0`
+- **Target:** `net10.0`
+- **Namespace root:** `Native.OpenApi`
+- **AOT:** zero runtime reflection; serialization through source-generated contexts
 
-- **OpenAPI Document Loading**: Load OpenAPI specs from embedded resources (JSON and YAML supported)
-- **YAML Support**: Full support for YAML format with AOT-compatible parsing
-- **Document Merging**: Merge multiple partial specs into a consolidated document
-- **Linting**: Validate OpenAPI specs against configurable rules
-- **HTML Rendering**: Generate Redoc and Scalar documentation pages
-- **Native AOT Compatible**: Fully optimized for ahead-of-time compilation
+---
+
+## API surface at a glance
+
+### Attributes — `Native.OpenApi.Attributes`
+
+| Attribute | Target | Purpose | Wave 1 § |
+|---|---|---|---|
+| `[HideFromDocs(reason?)]` | class/struct | hide operation from generated YAML | F01 |
+| `[Deprecated(sunset, alternative, reason)]` | class/struct | emit `deprecated: true` + `x-sunset` + `x-swepay-alternative` + `x-swepay-deprecation-reason` | F03 |
+| `[ApiExample(name, summary) { RequestJson, ResponseStatus, ResponseJson }]` (multi-use) | class/struct | wire named examples into `examples` maps | F09 |
+| `[ErrorCatalog(typeof(T))]` | class/struct | attach an error-code catalog to the operation | F12 |
+| `[ErrorDefinition(code, httpStatus, userMessage, recovery) { DocUrl }]` | field (`const string`) | one entry inside a catalog | F12 |
+| `[ApiResponse(statusCode, responseType?, contentType = "application/json")]` (multi-use) | method (handler's `Handle`) | document per-status responses without the `.Produces<T>()` fluent | v1.6.0 |
+
+### Fluent extension — `Native.OpenApi.Extensions`
+
+| Method | Effect |
+|---|---|
+| `.ExcludeFromDocs()` | route-level sibling of `[HideFromDocs]`; identity pass-through at runtime, compile-time marker for the generator |
+
+### Models — `Native.OpenApi.Models`
+
+| Type | Role |
+|---|---|
+| `SwepayProblemDetails` | RFC 9457 superset (`code`, `recovery`, `requestId`); generator auto-injects the matching `components.schemas` entry whenever any operation serves `application/problem+json` without a typed body (F13) |
+
+### Rendering — `Native.OpenApi.Rendering`
+
+| Type | Role |
+|---|---|
+| `OpenApiRendererOptions` | aggregate; `.Default` = pre-Wave-1 behaviour (no brand, no footer, no Mermaid) |
+| `OpenApiBrandingOptions` | `PrimaryColor`, `AccentColor`, `LogoUrl`, `FaviconUrl`, `FontFamily`, `ThemeJsonOverride` |
+| `OpenApiFooterOptions` | `StatusUrl`, `SupportUrl`, `ChangelogUrl`, `SlaUrl`, `TermsUrl` |
+
+### Core classes
+
+| Class | Role |
+|---|---|
+| `OpenApiHtmlRenderer` | renders Redoc + Scalar HTML; each method has a two-arg overload (legacy) and a three-arg `options` overload |
+| `OpenApiDocumentLoaderBase` | base for embedded-resource spec loading (JSON + YAML) |
+| `OpenApiDocumentMerger` | merges partial specs into a single document |
+| `OpenApiDocumentProvider` | orchestrates load → merge → lint |
+| `OpenApiLinter` | validates against `OpenApiLintOptions` rules |
+| `OpenApiResourceReader` | reads embedded resources from an assembly |
+| `IGeneratedOpenApiSpec` | polymorphic access to generator output (implemented automatically when this package is referenced) |
+
+---
 
 ## Installation
 
@@ -20,69 +67,231 @@ OpenAPI 3.1 document loading, linting, merging, and rendering abstractions for .
 dotnet add package NativeOpenApi
 ```
 
-## Quick Start
+## Quick reference — Wave 1 (v1.7.0)
 
-### 1. Create your document loader
+### Hide endpoints from docs — F01
 
-The loader automatically detects and parses both JSON (`.json`) and YAML (`.yaml`, `.yml`) files:
+```csharp
+[HideFromDocs("internal ops endpoint")]
+public sealed record InternalHealthCommand(string Secret);
+```
+
+Or at the route level (handy when the same command is mapped to several paths and only one should be hidden):
+
+```csharp
+using Native.OpenApi.Extensions;
+
+routes.MapGet<ListUsersCommand, ListUsersResponse>("/v1/admin/internal/users", ...)
+      .ExcludeFromDocs();
+```
+
+**Effect:** the operation never appears in `paths:`. If every operation on a path is hidden, the path itself is dropped.
+
+### Deprecation — F03
+
+```csharp
+[Deprecated(
+    sunset: "2026-12-31",
+    alternative: "POST /v2/orders",
+    reason: "v1 doesn't support split payments.")]
+public sealed record CreateOrderV1Command(...);
+```
+
+**Emits:**
+
+```yaml
+deprecated: true
+x-sunset: "2026-12-31"
+x-swepay-alternative: "POST /v2/orders"
+x-swepay-deprecation-reason: "v1 doesn't support split payments."
+```
+
+### Named examples — F09
+
+```csharp
+[ApiExample(
+    name: "happy-path",
+    summary: "Simple order with 1 item",
+    RequestJson = "examples/create-order/happy.json",
+    ResponseStatus = 201,
+    ResponseJson = "examples/create-order/happy-response.json")]
+[ApiExample(
+    name: "validation-error",
+    summary: "Invalid CNPJ",
+    ResponseStatus = 422,
+    ResponseJson = "examples/create-order/invalid-cnpj.json")]
+public sealed record CreateOrderCommand(...);
+```
+
+Examples reference their JSON payload through `externalValue` (inline payload reading is a Wave 2 follow-up — see [docs/CHANGELOG.md](../../docs/CHANGELOG.md)).
+
+### Error catalog — F12
+
+Declare once:
+
+```csharp
+public static class SwepayErrors
+{
+    [ErrorDefinition(
+        code: "PAYMENT_INSUFFICIENT_FUNDS",
+        httpStatus: 402,
+        userMessage: "Saldo insuficiente no método de pagamento.",
+        recovery: "Tente outro método de pagamento ou adicione saldo.",
+        DocUrl = "https://docs.swepay.com.br/errors/PAYMENT_INSUFFICIENT_FUNDS")]
+    public const string PaymentInsufficientFunds = "PAYMENT_INSUFFICIENT_FUNDS";
+}
+```
+
+Wire on commands:
+
+```csharp
+[ErrorCatalog(typeof(SwepayErrors))]
+public sealed record CreatePaymentCommand(...);
+```
+
+**Emits at document root:**
+
+```yaml
+x-swepay-error-catalog:
+  - code: "PAYMENT_INSUFFICIENT_FUNDS"
+    httpStatus: 402
+    userMessage: "Saldo insuficiente no método de pagamento."
+    recovery: "Tente outro método de pagamento ou adicione saldo."
+    docUrl: "https://docs.swepay.com.br/errors/PAYMENT_INSUFFICIENT_FUNDS"
+```
+
+**Per operation** (the generator slices only codes whose `httpStatus` matches a declared response on that operation):
+
+```yaml
+x-swepay-errors:
+  - "PAYMENT_INSUFFICIENT_FUNDS"
+```
+
+### Canonical `problem+json` schema — F13
+
+When any operation advertises `application/problem+json` **without** a typed body, the generator injects:
+
+```yaml
+components:
+  schemas:
+    SwepayProblemDetails:
+      type: object
+      properties: { type, title, status, detail, instance, code, recovery, requestId }
+      required: [type, title, status, detail, code, recovery, requestId]
+```
+
+Two ways to opt in:
+
+```csharp
+// (a) fluent — no typed body
+routes.MapPost<CreateOrderCommand, CreateOrderResponse>("/v1/orders", ...)
+      .ProducesProblem(422);
+
+// (b) handler attribute — null responseType
+public sealed class CreateOrderHandler : IRequestHandler<CreateOrderCommand, CreateOrderResponse>
+{
+    [ApiResponse(422, null, "application/problem+json")]
+    public ValueTask<CreateOrderResponse> Handle(...) => ...;
+}
+```
+
+### Renderer options — F15 / F16 / F17
+
+```csharp
+using Native.OpenApi;
+using Native.OpenApi.Rendering;
+
+var options = new OpenApiRendererOptions
+{
+    Branding = new OpenApiBrandingOptions
+    {
+        PrimaryColor = "#0A2540",
+        AccentColor  = "#00D4AA",
+        LogoUrl      = "https://cdn.swepay.com.br/brand/logo-dark.svg",
+        FaviconUrl   = "https://cdn.swepay.com.br/brand/favicon.ico",
+        FontFamily   = "Inter, Roboto, sans-serif"
+    },
+    Footer = new OpenApiFooterOptions
+    {
+        StatusUrl     = "https://status.swepay.com.br",
+        SupportUrl    = "https://docs.swepay.com.br/support",
+        ChangelogUrl  = "https://docs.swepay.com.br/changelog",
+        SlaUrl        = "https://docs.swepay.com.br/sla",
+        TermsUrl      = "https://docs.swepay.com.br/terms"
+    },
+    EnableMermaid        = true,   // F17 — render fenced ```mermaid blocks as SVG
+    MermaidFromLocalAsset = false  // true for air-gapped deployments (serves ./assets/mermaid.min.js)
+};
+
+var renderer = new OpenApiHtmlRenderer();
+var redocHtml  = renderer.RenderRedoc ("/docs/openapi.json", "My API", options);
+var scalarHtml = renderer.RenderScalar("/docs/openapi.json", "My API", options);
+```
+
+The legacy `RenderRedoc(spec, title)` / `RenderScalar(spec, title)` overloads are preserved (RFC principle **O5**).
+
+**Mermaid in descriptions** — any fenced ` ```mermaid ` block inside `summary`/`description` text becomes inline SVG when `EnableMermaid = true`. Example description body:
+
+````markdown
+## Flow
+
+```mermaid
+flowchart LR
+  A[1. Create realm] --> B[2. Register client] --> C[3. Issue token]
+```
+````
+
+---
+
+## Minimal document pipeline
+
+### 1. Loader
 
 ```csharp
 public class MyOpenApiDocumentLoader : OpenApiDocumentLoaderBase
 {
-    public MyOpenApiDocumentLoader(OpenApiResourceReader resourceReader) 
-        : base(resourceReader) { }
+    public MyOpenApiDocumentLoader(OpenApiResourceReader reader) : base(reader) { }
 
-    public override IReadOnlyList<OpenApiDocumentPart> LoadCommon()
+    public override IReadOnlyList<OpenApiDocumentPart> LoadCommon() => new[]
     {
-        return new List<OpenApiDocumentPart>
-        {
-            // YAML files
-            Load("common-schemas", "openapi/common/schemas.yaml"),
-            Load("common-responses", "openapi/common/responses.yaml"),
-            Load("common-security", "openapi/common/security.yaml")
-        };
-    }
+        Load("common-schemas",   "openapi/common/schemas.yaml"),
+        Load("common-responses", "openapi/common/responses.yaml"),
+        Load("common-security",  "openapi/common/security.yaml"),
+    };
 
-    public override IReadOnlyList<OpenApiDocumentPart> LoadPartials()
+    public override IReadOnlyList<OpenApiDocumentPart> LoadPartials() => new[]
     {
-        return new List<OpenApiDocumentPart>
-        {
-            // Mix of YAML and JSON files
-            Load("users", "openapi/users/openapi.yaml"),
-            Load("products", "openapi/products/openapi.json")
-        };
-    }
+        Load("users",    "openapi/users/openapi.yaml"),
+        Load("products", "openapi/products/openapi.json"),
+    };
 }
 ```
 
-### 2. Create your document merger (optional)
+### 2. Merger (optional)
 
 ```csharp
 public class MyOpenApiDocumentMerger : OpenApiDocumentMerger
 {
     protected override string GetServerUrl()
-    {
-        var env = Environment.GetEnvironmentVariable("ENVIRONMENT") ?? "dev";
-        return env switch
+        => Environment.GetEnvironmentVariable("ENVIRONMENT") switch
         {
-            "prd" => "https://api.myapp.com",
-            "hml" => "https://api-staging.myapp.com",
-            _ => "https://localhost:5001"
+            "prd" => "https://api.swepay.com.br",
+            "hml" => "https://sandbox.api.swepay.com.br",
+            _     => "https://localhost:5001"
         };
-    }
 
-    protected override string GetApiTitle() => "My API";
-    protected override string GetApiDescription() => "My consolidated API documentation.";
+    protected override string GetApiTitle()       => "Swepay API";
+    protected override string GetApiDescription() => "Consolidated OpenAPI spec for partner integrations.";
 }
 ```
 
-### 3. Wire up the provider
+### 3. Provider
 
 ```csharp
-var resourceReader = new OpenApiResourceReader(typeof(Program).Assembly, "MyApp.");
-var loader = new MyOpenApiDocumentLoader(resourceReader);
-var merger = new MyOpenApiDocumentMerger();
-var linter = new OpenApiLinter(OpenApiLintOptions.Empty);
+var reader   = new OpenApiResourceReader(typeof(Program).Assembly, "MyApp.");
+var loader   = new MyOpenApiDocumentLoader(reader);
+var merger   = new MyOpenApiDocumentMerger();
+var linter   = new OpenApiLinter(OpenApiLintOptions.Empty);
 var provider = new OpenApiDocumentProvider(loader, merger, linter);
 
 provider.WarmUp();
@@ -91,21 +300,32 @@ var json = provider.Document.Json;
 var yaml = provider.Document.Yaml;
 ```
 
-### 4. Render documentation pages
+---
+
+## Linting
 
 ```csharp
-var renderer = new OpenApiHtmlRenderer();
-var redocHtml = renderer.RenderRedoc("/openapi/v1/spec.json", "My API Docs");
-var scalarHtml = renderer.RenderScalar("/openapi/v1/spec.json", "My API Docs");
+var options = new OpenApiLintOptions(
+    RequiredErrorResponses: ["400", "401", "500"],
+    SensitiveFieldNames:    ["password", "token", "secret"],
+    DisallowedGenericSegments: ["data", "items"]);
+
+var linter = new OpenApiLinter(options);
 ```
 
-## ApiResponse Attribute
+Checks:
 
-The `ApiResponseAttribute` allows you to document HTTP responses directly on handler methods. This is particularly useful when using the `NativeLambdaRouter.SourceGenerator.OpenApi` package to automatically generate OpenAPI specifications.
+- OpenAPI version is `3.1.0`
+- Every path is versioned (e.g. `/v1/`)
+- Every operation has a security block (or explicit `security: []` for anonymous)
+- Required error responses are declared
+- Sensitive fields carry a description
 
-### Usage
+---
 
-Apply the `[ApiResponse]` attribute to your handler methods to specify possible HTTP responses:
+## `[ApiResponse]` on handler methods (v1.6.0+)
+
+Co-locate per-status responses with the handler:
 
 ```csharp
 using Native.OpenApi;
@@ -113,139 +333,40 @@ using NativeMediator;
 
 public class GetProductHandler : IRequestHandler<GetProductCommand, GetProductResponse>
 {
-    [ApiResponse(200, typeof(GetProductResponse), "application/json")]
-    [ApiResponse(404, typeof(ErrorResponse), "application/json")]
+    [ApiResponse(200, typeof(GetProductResponse))]
+    [ApiResponse(404, typeof(ErrorResponse))]
     [ApiResponse(400, typeof(ProblemDetails), "application/problem+json")]
-    [ApiResponse(500, typeof(ProblemDetails), "application/problem+json")]
-    public ValueTask<GetProductResponse> Handle(GetProductCommand request, CancellationToken cancellationToken)
-    {
-        // ... handler implementation
-    }
+    [ApiResponse(422, null,                  "application/problem+json")]   // → SwepayProblemDetails (F13)
+    public ValueTask<GetProductResponse> Handle(GetProductCommand r, CancellationToken ct) { ... }
 }
 ```
 
-### Parameters
+| Parameter | Type | Default | Purpose |
+|---|---|---|---|
+| `statusCode` | `int` | — | HTTP status |
+| `responseType` | `Type?` | `null` | typed body; when `null` + `application/problem+json`, the generator points at `SwepayProblemDetails` |
+| `contentType` | `string` | `"application/json"` | content type |
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `statusCode` | `int` | Yes | - | HTTP status code (e.g., 200, 404, 500) |
-| `responseType` | `Type?` | No | `null` | Type of the response body. Null for no body (204, 404) |
-| `contentType` | `string` | No | `"application/json"` | Content type of the response |
+---
 
-### Multiple Response Types
-
-The attribute can be applied multiple times to document various response scenarios:
-
-```csharp
-[ApiResponse(200, typeof(Product))]              // Success with JSON
-[ApiResponse(201, typeof(Product))]              // Created with JSON
-[ApiResponse(204)]                                // No Content
-[ApiResponse(400, typeof(ValidationProblem), "application/problem+json")]
-[ApiResponse(401)]                                // Unauthorized (no body)
-[ApiResponse(403, typeof(ProblemDetails), "application/problem+json")]
-[ApiResponse(404, typeof(ProblemDetails), "application/problem+json")]
-[ApiResponse(500, typeof(ProblemDetails), "application/problem+json")]
-```
-
-### How It Works
-
-When used with the `NativeLambdaRouter.SourceGenerator.OpenApi`:
-
-1. The Source Generator scans your code for handler methods (implementing `IRequestHandler<TCommand, TResponse>`)
-2. It reads `[ApiResponse]` attributes from the handler's `Handle` method
-3. It automatically includes these responses in the generated OpenAPI specification
-4. Each response is properly typed and includes the correct content type
-
-### Benefits
-
-- **Type-safe**: Response types are checked at compile time
-- **Single Source of Truth**: Documentation lives next to the implementation
-- **Auto-generated**: No manual YAML/JSON editing required
-- **AOT-compatible**: Works perfectly with Native AOT compilation
-
-### Example: Complete Handler
-
-```csharp
-public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, CreateOrderResponse>
-{
-    [ApiResponse(201, typeof(CreateOrderResponse), "application/json")]
-    [ApiResponse(400, typeof(ValidationProblemDetails), "application/problem+json")]
-    [ApiResponse(409, typeof(ConflictProblemDetails), "application/problem+json")]
-    [ApiResponse(500, typeof(ProblemDetails), "application/problem+json")]
-    public async ValueTask<CreateOrderResponse> Handle(
-        CreateOrderCommand request, 
-        CancellationToken cancellationToken)
-    {
-        // Validate request
-        if (string.IsNullOrEmpty(request.CustomerId))
-            throw new ValidationException("CustomerId is required");
-
-        // Create order
-        var order = await _orderService.CreateAsync(request, cancellationToken);
-        
-        return new CreateOrderResponse(order.Id, order.Total);
-    }
-}
-```
-
-The generated OpenAPI spec will include all four response types with proper schemas and content types.
-
-## Linting Rules
-
-Configure linting rules using `OpenApiLintOptions`:
-
-```csharp
-var options = new OpenApiLintOptions(
-    RequiredErrorResponses: ["400", "401", "500"],
-    SensitiveFieldNames: ["password", "token", "secret"],
-    DisallowedGenericSegments: ["data", "items"]
-);
-var linter = new OpenApiLinter(options);
-```
-
-The linter validates:
-- OpenAPI version is 3.1.0
-- All paths include versioning (e.g., `/v1/`)
-- All operations have security definitions (JwtBearer or OAuth2)
-- Required error responses are present
-- Sensitive fields have descriptions
-
-## API Reference
-
-### Core Classes
-
-| Class | Description |
-|-------|-------------|
-| `OpenApiDocumentLoaderBase` | Base class for loading OpenAPI document parts |
-| `OpenApiDocumentMerger` | Merges multiple OpenAPI document parts into one |
-| `OpenApiDocumentProvider` | Orchestrates loading, merging, and linting |
-| `OpenApiLinter` | Validates OpenAPI documents against rules |
-| `OpenApiHtmlRenderer` | Generates HTML documentation pages |
-| `OpenApiResourceReader` | Reads embedded resources from assemblies |
-
-### Document Types
-
-| Type | Description |
-|------|-------------|
-| `OpenApiDocument` | Represents a complete OpenAPI document with JSON/YAML output |
-| `OpenApiDocumentPart` | Represents a partial OpenAPI spec to be merged |
-| `OpenApiLintOptions` | Configuration options for linting rules |
-
-## Native AOT Compatibility
-
-This library is fully compatible with .NET Native AOT compilation:
+## Native AOT
 
 ```xml
 <PropertyGroup>
-    <PublishAot>true</PublishAot>
+  <PublishAot>true</PublishAot>
+  <IsAotCompatible>true</IsAotCompatible>
+  <IsTrimmable>true</IsTrimmable>
 </PropertyGroup>
 ```
 
-All JSON/YAML parsing uses source-generated serialization contexts for optimal performance and trimming support.
+All JSON/YAML serialization flows through source-generated `JsonSerializerContext`. No runtime reflection on consumer types.
 
-## Related Packages
+---
 
-- [NativeLambdaRouter.SourceGenerator.OpenApi](../NativeLambdaRouter.SourceGenerator.OpenApi/) - Source Generator for automatic OpenAPI spec generation from NativeLambdaRouter endpoints
+## Related
+
+- [NativeLambdaRouter.SourceGenerator.OpenApi](../NativeLambdaRouter.SourceGenerator.OpenApi/) — Roslyn generator that reads the attributes above
+- [Root repository](../../) · [Changelog](../../docs/CHANGELOG.md) · [UX RFC](../../docs/RFC-DOCUMENTACAO-UX.md)
 
 ## License
 

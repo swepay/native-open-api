@@ -5,6 +5,7 @@ using Functions.OpenApi.Commands;
 using Functions.OpenApi.Responses;
 using System.Text.Json;
 using Native.OpenApi;
+using Native.OpenApi.Rendering;
 
 [assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
 
@@ -13,6 +14,7 @@ namespace Functions.OpenApi;
 public sealed class Function : RoutedApiGatewayFunction
 {
     private readonly OpenApiDocumentProvider _provider;
+    private readonly OpenApiRendererOptions _rendererOptions;
 
     public Function(IMediator mediator)
         : base(mediator)
@@ -22,6 +24,31 @@ public sealed class Function : RoutedApiGatewayFunction
         var linter = new OpenApiLinter(OpenApiLintOptions.Empty);
         _provider = new OpenApiDocumentProvider(loader, merger, linter);
         _provider.WarmUp();
+
+        // RFC §§ F15 / F16 / F17 — Swepay brand palette, institutional footer
+        // and Mermaid injection (consumes fenced ```mermaid blocks inside
+        // operation descriptions, plus x-swepay-flows / x-swepay-state-machine
+        // in the spec once Wave 2 lands).
+        _rendererOptions = new OpenApiRendererOptions
+        {
+            Branding = new OpenApiBrandingOptions
+            {
+                PrimaryColor = "#0A2540",
+                AccentColor = "#00D4AA",
+                LogoUrl = "https://cdn.swepay.com.br/brand/logo-dark.svg",
+                FaviconUrl = "https://cdn.swepay.com.br/brand/favicon.ico",
+                FontFamily = "Inter, Roboto, sans-serif"
+            },
+            Footer = new OpenApiFooterOptions
+            {
+                StatusUrl = "https://status.swepay.com.br",
+                SupportUrl = "https://docs.swepay.com.br/support",
+                ChangelogUrl = "https://docs.swepay.com.br/changelog",
+                SlaUrl = "https://docs.swepay.com.br/sla",
+                TermsUrl = "https://docs.swepay.com.br/terms"
+            },
+            EnableMermaid = true
+        };
     }
 
     protected override void ConfigureRoutes(IRouteBuilder routes)
@@ -74,13 +101,15 @@ public sealed class Function : RoutedApiGatewayFunction
     private GetRedocResponse HandleGetRedoc()
     {
         var renderer = new OpenApiHtmlRenderer();
-        return new GetRedocResponse(renderer.RenderRedoc("/docs/openapi.json", "Multi-Lambda API"));
+        return new GetRedocResponse(
+            renderer.RenderRedoc("/docs/openapi.json", "Multi-Lambda API", _rendererOptions));
     }
 
     private GetScalarResponse HandleGetScalar()
     {
         var renderer = new OpenApiHtmlRenderer();
-        return new GetScalarResponse(renderer.RenderScalar("/docs/openapi.json", "Multi-Lambda API"));
+        return new GetScalarResponse(
+            renderer.RenderScalar("/docs/openapi.json", "Multi-Lambda API", _rendererOptions));
     }
 
     protected override string SerializeResponse(object response)
