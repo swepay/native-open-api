@@ -30,6 +30,12 @@
     <DevelopmentDependency>true</DevelopmentDependency>
     <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- Analyzer/source-generator package: ship the build output under
+         analyzers/dotnet/cs (instead of lib/). This keeps a real build output in
+         the package (satisfies NU5017) while producing no lib/ref folder
+         (avoids NU5128, since runtime dependencies are suppressed). -->
+    <IncludeBuildOutput>true</IncludeBuildOutput>
+    <BuildOutputTargetFolder>analyzers/dotnet/cs</BuildOutputTargetFolder>
   </PropertyGroup>
 
   <ItemGroup>
@@ -45,10 +51,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" PrivateAssets="all" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>
 
   <!-- Include .props file so consumers automatically get CompilerVisibleProperty for OpenApiSpecName/OpenApiSpecTitle -->
