@@ -134,10 +134,11 @@ public class MyRouter
         var result = GeneratorTestHelper.RunGenerator(sourceCode);
         var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
 
-        // Assert
+        // Assert — tags are now emitted quoted (MELHORIA-5 fix); in the verbatim
+        // C# string they appear as - ""Clients"" and - ""Admin""
         generatedSource.Should().NotBeNull();
-        generatedSource.Should().Contain("- Clients");
-        generatedSource.Should().Contain("- Admin");
+        generatedSource.Should().Contain("- \"\"Clients\"\"");
+        generatedSource.Should().Contain("- \"\"Admin\"\"");
     }
 
     [Fact]
@@ -166,11 +167,12 @@ public class MyRouter
         var result = GeneratorTestHelper.RunGenerator(sourceCode);
         var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
 
-        // Assert
+        // Assert — tags are now emitted quoted (MELHORIA-5 fix); in the verbatim
+        // C# string they appear as - ""Inventory""
         generatedSource.Should().NotBeNull();
-        generatedSource.Should().Contain("- Inventory");
+        generatedSource.Should().Contain("- \"\"Inventory\"\"");
         // The auto-generated tag (V1 or Items) should NOT appear
-        generatedSource.Should().NotContain("- V1");
+        generatedSource.Should().NotContain("- \"\"V1\"\"");
     }
 
     // ── ProducesProblem ─────────────────────────────────────────────
@@ -273,10 +275,10 @@ public class MyRouter
         var result = GeneratorTestHelper.RunGenerator(sourceCode);
         var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
 
-        // Assert
+        // Assert — tags are now emitted quoted (MELHORIA-5 fix)
         generatedSource.Should().NotBeNull();
-        generatedSource.Should().Contain("- Clients");
-        generatedSource.Should().Contain("- Management");
+        generatedSource.Should().Contain("- \"\"Clients\"\"");
+        generatedSource.Should().Contain("- \"\"Management\"\"");
     }
 
     [Fact]
@@ -382,11 +384,12 @@ public class MyRouter
         var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
 
         // Assert — Fluent chain values should win over attributes
+        // Tags are now emitted quoted (MELHORIA-5 fix); in verbatim C# string: - ""FluentTag""
         generatedSource.Should().NotBeNull();
         generatedSource.Should().Contain("operationId: FromFluentChain");
         generatedSource.Should().NotContain("FromAttribute");
-        generatedSource.Should().Contain("- FluentTag");
-        generatedSource.Should().NotContain("- AttributeTag");
+        generatedSource.Should().Contain("- \"\"FluentTag\"\"");
+        generatedSource.Should().NotContain("- \"\"AttributeTag\"\"");
     }
 
     // ── Multiple attributes combined ────────────────────────────────
@@ -428,7 +431,8 @@ public class MyRouter
         generatedSource.Should().Contain("operationId: ListClients");
         generatedSource.Should().Contain("summary: \"\"List all clients\"\"");
         generatedSource.Should().Contain("description: \"\"Returns paginated clients for the realm\"\"");
-        generatedSource.Should().Contain("- Clients");
+        // Tags are now emitted quoted (MELHORIA-5 fix); in verbatim C# string: - ""Clients""
+        generatedSource.Should().Contain("- \"\"Clients\"\"");
     }
 
     // ── Without metadata, auto-generation still works ───────────────
@@ -675,7 +679,8 @@ public class MyRouter
         generatedSource.Should().Contain("operationId: RefreshToken");
         generatedSource.Should().Contain("summary: \"\"Refresh token endpoint\"\"");
         generatedSource.Should().Contain("description: \"\"Exchanges a valid refresh token for a new access token.\"\"");
-        generatedSource.Should().Contain("- OAuth2");
+        // Tags are now emitted quoted (MELHORIA-5 fix); in verbatim C# string: - ""OAuth2""
+        generatedSource.Should().Contain("- \"\"OAuth2\"\"");
         generatedSource.Should().Contain("application/x-www-form-urlencoded");
         generatedSource.Should().Contain("security: []");
         // Form fields from the command type

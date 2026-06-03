@@ -1,9 +1,10 @@
 # native-open-api
 
-**Versão:** v1.6.0  
+**Versão:** v1.8.0  
 **Tipo:** NuGet Library - OpenAPI 3.1 Generation & Rendering  
 **AOT-Safe:** Sim (PublishAot = true)  
-**Linguagem:** C# 12+
+**Linguagem:** C# 12+  
+**Target:** net10.0 (runtime) / netstandard2.0 (source generator)
 
 ## O que é
 
@@ -307,12 +308,49 @@ services.AddSingleton<IGeneratedOpenApiSpec>(
     new MyFunction.Generated.GeneratedApiSpec());
 ```
 
+## Recursos de Documentação OpenAPI 3.1 (v1.8.0)
+
+Expansão das features de documentação, todas opt-in e renderizadas no **Scalar** (UI de referência; política **Scalar-first** em divergências com Redoc — usa `x-scalar-*`/`x-enum-*` sem dual-emit). Mecanismo de declaração: atributos a nível de **assembly** (documento) ou no **command type** / **propriedade** (operação/schema).
+
+### Navegação
+- **`tags` no root** com `description` e `externalDocs`, **`x-tagGroups`**, **`x-displayName`** — via `[assembly: TagMetadata(...)]`, `[assembly: TagGroup(...)]`.
+- **`externalDocs`** no root (`[assembly: OpenApiExternalDocs(...)]`) e por operação (`[EndpointExternalDocs(...)]`).
+
+### Por operação
+- **`x-codeSamples`** (multi-linguagem) — `[CodeSample(lang, source, Label=...)]` (repetível).
+- **`x-badges`** — `[OperationBadge(name, Position=..., Color=...)]` (repetível).
+- **`x-scalar-stability`** (`stable`/`experimental`/`deprecated`) — `[ScalarStability(Stability.X)]`.
+
+### Schema (por propriedade)
+- `description`, `example`, `default` e **constraints** (`minLength`/`maxLength`/`pattern`/`minimum`/`maximum`/`exclusive*`/`multipleOf`/`minItems`/`maxItems`/`uniqueItems`), **`x-order`**, **`x-additionalPropertiesName`** — via `[OpenApiProperty(...)]`. Também lê **DataAnnotations** (`[Required]`, `[StringLength]`, `[Range]`, `[RegularExpression]`...).
+- **`x-enum-descriptions`** e **`x-enum-varnames`** — via `[OpenApiEnumMember(Description=..., DisplayName=...)]` nos membros do enum.
+
+### Polimorfismo
+- **`allOf`** automático para tipos com herança.
+- **`oneOf` + `discriminator`** (com `mapping`) — `[OpenApiDiscriminator("prop")]` + `[OpenApiSubType(typeof(T), "valor")]` na classe base. As propriedades compartilhadas vão para um schema `{Base}__Core` (base discriminada fica pura `oneOf`+`discriminator` para conformidade estrita).
+
+### Documento
+- **`info` rico** (`description`, `summary`, `termsOfService`, `contact`, `license`) — `[assembly: OpenApiInfo(...)]`.
+- **`servers`** — `[assembly: OpenApiServer(url, Description=...)]` (repetível).
+- **Exemplos inline** (`value:`) além de `externalValue` — `[ApiExample]` com `RequestValue`/`ResponseValue`.
+- **`components/responses`** (BadRequest/Unauthorized/InternalServerError) e **`components/securitySchemes`** (`JwtBearer`) agora emitidos (antes eram `$ref` órfãos).
+
+### Estrutural
+- **Query/Header params** — `[QueryParameter(name, type, ...)]`, `[HeaderParameter(name, type, ...)]`.
+- **Response headers** — `[ResponseHeader(statusCode, name, type, ...)]`.
+- **`webhooks`** (top-level) — `[assembly: Webhook(name, typeof(Payload), Method=..., ...)]` (payload resolve propriedades em components.schemas).
+- **`links`** — `[ResponseLink(statusCode, linkId, OperationId=..., Parameters="k=$expr", ...)]`.
+- **`callbacks`** — `[Callback(name, Expression=..., Method=..., PayloadType=...)]` (forma mínima).
+
+### Renderer (Scalar)
+- **`OpenApiScalarViewerOptions`** (em `OpenApiRendererOptions.ScalarViewer`): `Theme`, `DarkMode`, `Layout`, `HideModels`, `HideDownloadButton`, `HideSidebar`, `HideTestRequestButton`, `DefaultHttpClient*`, `LocalAssetPath` (air-gap). Logo via config nativa do Scalar. Config entregue via atributo HTML escapado (imune a XSS).
+
 ## Premissas
 
 - **Zero reflection:** Source generator (compile-time)
 - **PublishAot = true:** Compilado sem trim warnings
 - **Namespace:** `Native.OpenApi`
-- **Target:** `net8.0`
+- **Target:** `net10.0` (runtime) / `netstandard2.0` (source generator)
 - **YamlDotNet:** Única dependency externa (leitura YAML)
 - **OpenAPI 3.1:** Versão suportada (não 3.0.x)
 - **Validation:** Schema validation em build-time

@@ -217,6 +217,9 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
 
     /// <summary>
     /// Extracts properties from command and response type symbols for schema generation.
+    /// Also runs polymorphism-aware schema discovery to populate
+    /// <see cref="EndpointInfo.ReferencedSchemas"/> with all transitively referenced
+    /// schemas (including sub-types, base classes, and complex property types).
     /// </summary>
     private static void ExtractTypeProperties(ITypeSymbol commandType, ITypeSymbol responseType, EndpointInfo endpoint)
     {
@@ -233,6 +236,15 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
             endpoint.ResponseProperties = responseProps;
             endpoint.ResponsePropertiesResolved = true;
         }
+
+        // Polymorphism-aware deep discovery: collect all transitively referenced schemas
+        // (base classes, sub-types, complex property refs) with polymorphism metadata.
+        var allDiscovered = new List<SchemaTypeInfo>();
+        foreach (var schema in TypePropertyExtractor.DiscoverSchemas(commandType))
+            allDiscovered.Add(schema);
+        foreach (var schema in TypePropertyExtractor.DiscoverSchemas(responseType))
+            allDiscovered.Add(schema);
+        endpoint.ReferencedSchemas = allDiscovered;
     }
 
     /// <summary>
@@ -481,8 +493,325 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
                         endpoint.ErrorCatalogTypeName = catalogSym.ToDisplayString();
                     }
                     break;
+
+                // Navigation foundation — per-operation externalDocs.
+                case "EndpointExternalDocsAttribute":
+                    if (attr.ConstructorArguments.Length > 0
+                        && attr.ConstructorArguments[0].Value is string extDocsUrl)
+                    {
+                        var extDocs = new ExternalDocsInfo { Url = extDocsUrl };
+                        foreach (var named in attr.NamedArguments)
+                        {
+                            if (named.Key == "Description" && named.Value.Value is string extDocsDesc)
+                                extDocs.Description = extDocsDesc;
+                        }
+                        endpoint.ExternalDocs = extDocs;
+                    }
+                    break;
+
+                // Operation Richness — x-codeSamples.
+                case "CodeSampleAttribute":
+                    var codeSample = ExtractCodeSample(attr);
+                    if (codeSample != null) endpoint.CodeSamples.Add(codeSample);
+                    break;
+
+                // Operation Richness — x-badges.
+                case "OperationBadgeAttribute":
+                    var badge = ExtractOperationBadge(attr);
+                    if (badge != null) endpoint.Badges.Add(badge);
+                    break;
+
+                // Operation Richness — x-scalar-stability (Scalar-first).
+                case "ScalarStabilityAttribute":
+                    if (attr.ConstructorArguments.Length > 0
+                        && attr.ConstructorArguments[0].Value is int stabilityValue)
+                    {
+                        endpoint.ScalarStability = stabilityValue switch
+                        {
+                            0 => "stable",
+                            1 => "experimental",
+                            2 => "deprecated",
+                            _ => null
+                        };
+                    }
+                    break;
+
+                // Structural Wave 5 — query parameters (in: query).
+                case "QueryParameterAttribute":
+                {
+                    var param = ExtractExplicitParameter(attr, "query");
+                    if (param != null) endpoint.QueryParameters.Add(param);
+                    break;
+                }
+
+                // Structural Wave 5 — header parameters (in: header).
+                case "HeaderParameterAttribute":
+                {
+                    var param = ExtractExplicitParameter(attr, "header");
+                    if (param != null) endpoint.HeaderParameters.Add(param);
+                    break;
+                }
+
+                // Structural Wave 5 — response headers.
+                case "ResponseHeaderAttribute":
+                {
+                    var rh = ExtractResponseHeader(attr);
+                    if (rh != null) endpoint.ResponseHeaders.Add(rh);
+                    break;
+                }
+
+                // Structural Wave 5 — response links.
+                case "ResponseLinkAttribute":
+                {
+                    var rl = ExtractResponseLink(attr);
+                    if (rl != null) endpoint.ResponseLinks.Add(rl);
+                    break;
+                }
+
+                // Structural Wave 5 — callbacks (minimal implementation).
+                case "CallbackAttribute":
+                {
+                    var cb = ExtractCallback(attr);
+                    if (cb != null) endpoint.Callbacks.Add(cb);
+                    break;
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// Maps the constructor args + named args of a <c>[QueryParameter]</c> or
+    /// <c>[HeaderParameter]</c> attribute to an <see cref="ExplicitParameterInfo"/>.
+    /// Returns <c>null</c> if the mandatory <c>name</c> arg is missing.
+    /// </summary>
+    private static ExplicitParameterInfo? ExtractExplicitParameter(AttributeData attr, string location)
+    {
+        if (attr.ConstructorArguments.Length < 1) return null;
+        if (attr.ConstructorArguments[0].Value is not string name) return null;
+
+        // Determine schema type from the second constructor arg (Type? parameterType).
+        var (schemaType, schemaFormat) = ResolveSchemaFromTypeArg(
+            attr.ConstructorArguments.Length > 1 ? attr.ConstructorArguments[1].Value as INamedTypeSymbol : null);
+
+        var info = new ExplicitParameterInfo
+        {
+            Name = name,
+            In = location,
+            SchemaType = schemaType,
+            SchemaFormat = schemaFormat
+        };
+
+        foreach (var named in attr.NamedArguments)
+        {
+            switch (named.Key)
+            {
+                case "Required" when named.Value.Value is bool req:
+                    info.Required = req;
+                    break;
+                case "Description" when named.Value.Value is string desc:
+                    info.Description = desc;
+                    break;
+            }
+        }
+
+        return info;
+    }
+
+    /// <summary>
+    /// Maps the constructor args + named args of a <c>[ResponseHeader]</c> attribute
+    /// to a <see cref="ResponseHeaderInfo"/>. Returns <c>null</c> if mandatory args are missing.
+    /// </summary>
+    private static ResponseHeaderInfo? ExtractResponseHeader(AttributeData attr)
+    {
+        if (attr.ConstructorArguments.Length < 2) return null;
+        if (attr.ConstructorArguments[0].Value is not int statusCode) return null;
+        if (attr.ConstructorArguments[1].Value is not string name) return null;
+
+        var (schemaType, schemaFormat) = ResolveSchemaFromTypeArg(
+            attr.ConstructorArguments.Length > 2 ? attr.ConstructorArguments[2].Value as INamedTypeSymbol : null);
+
+        var info = new ResponseHeaderInfo
+        {
+            StatusCode = statusCode,
+            Name = name,
+            SchemaType = schemaType,
+            SchemaFormat = schemaFormat
+        };
+
+        foreach (var named in attr.NamedArguments)
+        {
+            switch (named.Key)
+            {
+                case "Description" when named.Value.Value is string desc:
+                    info.Description = desc;
+                    break;
+                case "Required" when named.Value.Value is bool req:
+                    info.Required = req;
+                    break;
+            }
+        }
+
+        return info;
+    }
+
+    /// <summary>
+    /// Maps a <c>[ResponseLink]</c> attribute to a <see cref="ResponseLinkInfo"/>.
+    /// Returns <c>null</c> if mandatory args are missing.
+    /// </summary>
+    private static ResponseLinkInfo? ExtractResponseLink(AttributeData attr)
+    {
+        if (attr.ConstructorArguments.Length < 2) return null;
+        if (attr.ConstructorArguments[0].Value is not int statusCode) return null;
+        if (attr.ConstructorArguments[1].Value is not string linkId) return null;
+
+        var info = new ResponseLinkInfo { StatusCode = statusCode, LinkId = linkId };
+
+        foreach (var named in attr.NamedArguments)
+        {
+            switch (named.Key)
+            {
+                case "OperationId" when named.Value.Value is string opId:
+                    info.OperationId = opId;
+                    break;
+                case "Parameters" when named.Value.Value is string parameters:
+                    info.Parameters = parameters;
+                    break;
+                case "Description" when named.Value.Value is string desc:
+                    info.Description = desc;
+                    break;
+            }
+        }
+
+        return info;
+    }
+
+    /// <summary>
+    /// Maps a <c>[Callback]</c> attribute to a <see cref="CallbackInfo"/>.
+    /// Returns <c>null</c> if mandatory args are missing.
+    /// </summary>
+    private static CallbackInfo? ExtractCallback(AttributeData attr)
+    {
+        if (attr.ConstructorArguments.Length < 1) return null;
+        if (attr.ConstructorArguments[0].Value is not string name) return null;
+
+        var info = new CallbackInfo { Name = name };
+
+        foreach (var named in attr.NamedArguments)
+        {
+            switch (named.Key)
+            {
+                case "Expression" when named.Value.Value is string expr:
+                    info.Expression = expr;
+                    break;
+                case "Method" when named.Value.Value is string method:
+                    info.Method = method.ToLowerInvariant();
+                    break;
+                case "Summary" when named.Value.Value is string summary:
+                    info.Summary = summary;
+                    break;
+                case "PayloadType" when named.Value.Value is INamedTypeSymbol typeSym:
+                    info.PayloadTypeName = typeSym.Name;
+                    break;
+            }
+        }
+
+        return info;
+    }
+
+    /// <summary>
+    /// Derives an OpenAPI (schemaType, schemaFormat) pair from a CLR <see cref="INamedTypeSymbol"/>.
+    /// Falls back to ("string", null) for unknown or null types.
+    /// Handles Nullable&lt;T&gt; transparently.
+    /// </summary>
+    private static (string SchemaType, string? SchemaFormat) ResolveSchemaFromTypeArg(INamedTypeSymbol? typeSymbol)
+    {
+        if (typeSymbol == null) return ("string", null);
+
+        // Unwrap Nullable<T>
+        var underlying = typeSymbol;
+        if (typeSymbol.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+            && typeSymbol.TypeArguments.Length == 1)
+        {
+            underlying = typeSymbol.TypeArguments[0] as INamedTypeSymbol ?? typeSymbol;
+        }
+
+        return underlying.SpecialType switch
+        {
+            SpecialType.System_String  => ("string", null),
+            SpecialType.System_Boolean => ("boolean", null),
+            SpecialType.System_Int32   => ("integer", "int32"),
+            SpecialType.System_Int64   => ("integer", "int64"),
+            SpecialType.System_Double  => ("number", "double"),
+            SpecialType.System_Decimal => ("number", "double"),
+            SpecialType.System_Single  => ("number", "float"),
+            _ => ResolveSchemaByName(underlying.Name)
+        };
+    }
+
+    private static (string SchemaType, string? SchemaFormat) ResolveSchemaByName(string typeName)
+    {
+        return typeName switch
+        {
+            "Guid"           => ("string", "uuid"),
+            "DateTime"       => ("string", "date-time"),
+            "DateTimeOffset" => ("string", "date-time"),
+            "DateOnly"       => ("string", "date"),
+            "TimeSpan"       => ("string", null),
+            "Uri"            => ("string", "uri"),
+            "Byte"           => ("integer", "int32"),
+            "SByte"          => ("integer", "int32"),
+            "Int16"          => ("integer", "int32"),
+            "UInt16"         => ("integer", "int32"),
+            "UInt32"         => ("integer", "int64"),
+            "UInt64"         => ("integer", null),
+            _                => ("string", null)
+        };
+    }
+
+    /// <summary>
+    /// Maps the constructor args + named args of a <c>[CodeSample]</c> attribute
+    /// to a <see cref="CodeSampleInfo"/>. Returns <c>null</c> if the mandatory
+    /// <c>lang</c>/<c>source</c> positional args are missing.
+    /// </summary>
+    private static CodeSampleInfo? ExtractCodeSample(AttributeData attr)
+    {
+        if (attr.ConstructorArguments.Length < 2) return null;
+        if (attr.ConstructorArguments[0].Value is not string lang) return null;
+        if (attr.ConstructorArguments[1].Value is not string source) return null;
+
+        var info = new CodeSampleInfo { Lang = lang, Source = source };
+        foreach (var named in attr.NamedArguments)
+        {
+            if (named.Key == "Label" && named.Value.Value is string label)
+                info.Label = label;
+        }
+        return info;
+    }
+
+    /// <summary>
+    /// Maps the constructor args + named args of an <c>[OperationBadge]</c> attribute
+    /// to an <see cref="OperationBadgeInfo"/>. Returns <c>null</c> if the mandatory
+    /// <c>name</c> positional arg is missing.
+    /// </summary>
+    private static OperationBadgeInfo? ExtractOperationBadge(AttributeData attr)
+    {
+        if (attr.ConstructorArguments.Length < 1) return null;
+        if (attr.ConstructorArguments[0].Value is not string name) return null;
+
+        var info = new OperationBadgeInfo { Name = name };
+        foreach (var named in attr.NamedArguments)
+        {
+            switch (named.Key)
+            {
+                case "Position" when named.Value.Value is string pos:
+                    info.Position = pos;
+                    break;
+                case "Color" when named.Value.Value is string color:
+                    info.Color = color;
+                    break;
+            }
+        }
+        return info;
     }
 
     /// <summary>
@@ -509,6 +838,13 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
                     break;
                 case "ResponseJson" when named.Value.Value is string rsp:
                     info.ResponseJsonPath = rsp;
+                    break;
+                // Wave 3: inline value support
+                case "RequestValue" when named.Value.Value is string rv:
+                    info.RequestInlineValue = rv;
+                    break;
+                case "ResponseValue" when named.Value.Value is string rrv:
+                    info.ResponseInlineValue = rrv;
                     break;
             }
         }
@@ -557,6 +893,238 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
             }
         }
         return entries;
+    }
+
+    // ── Navigation foundation — assembly-level attribute readers ──────────
+
+    /// <summary>
+    /// Reads all <c>[TagMetadata]</c> assembly attributes from the compilation and returns
+    /// an ordered list (sorted by tag name for determinism).
+    /// </summary>
+    private static List<TagMetadataInfo> ReadTagMetadata(Compilation compilation)
+    {
+        var result = new List<TagMetadataInfo>();
+
+        foreach (var attr in compilation.Assembly.GetAttributes())
+        {
+            if (attr.AttributeClass?.Name != "TagMetadataAttribute") continue;
+            if (attr.ConstructorArguments.Length == 0) continue;
+            if (attr.ConstructorArguments[0].Value is not string tagName) continue;
+
+            var info = new TagMetadataInfo { Name = tagName };
+
+            foreach (var named in attr.NamedArguments)
+            {
+                switch (named.Key)
+                {
+                    case "Description" when named.Value.Value is string desc:
+                        info.Description = desc;
+                        break;
+                    case "DisplayName" when named.Value.Value is string dn:
+                        info.DisplayName = dn;
+                        break;
+                    case "ExternalDocsDescription" when named.Value.Value is string edDesc:
+                        if (info.ExternalDocs == null) info.ExternalDocs = new ExternalDocsInfo();
+                        info.ExternalDocs.Description = edDesc;
+                        break;
+                    case "ExternalDocsUrl" when named.Value.Value is string edUrl:
+                        if (info.ExternalDocs == null) info.ExternalDocs = new ExternalDocsInfo();
+                        info.ExternalDocs.Url = edUrl;
+                        break;
+                }
+            }
+
+            // Only keep ExternalDocs when a URL is present.
+            if (info.ExternalDocs != null && string.IsNullOrEmpty(info.ExternalDocs.Url))
+                info.ExternalDocs = null;
+
+            result.Add(info);
+        }
+
+        result.Sort(static (a, b) => string.Compare(a.Name, b.Name, System.StringComparison.Ordinal));
+        return result;
+    }
+
+    /// <summary>
+    /// Reads all <c>[TagGroup]</c> assembly attributes from the compilation and returns
+    /// them in declaration order (stable within a single build).
+    /// </summary>
+    private static List<TagGroupInfo> ReadTagGroups(Compilation compilation)
+    {
+        var result = new List<TagGroupInfo>();
+
+        foreach (var attr in compilation.Assembly.GetAttributes())
+        {
+            if (attr.AttributeClass?.Name != "TagGroupAttribute") continue;
+            if (attr.ConstructorArguments.Length < 2) continue;
+            if (attr.ConstructorArguments[0].Value is not string groupName) continue;
+
+            var info = new TagGroupInfo { Name = groupName };
+
+            // Second constructor arg is params string[] tags — stored as an array constant.
+            var tagsArg = attr.ConstructorArguments[1];
+            foreach (var tv in tagsArg.Values)
+            {
+                if (tv.Value is string tag)
+                    info.Tags.Add(tag);
+            }
+
+            result.Add(info);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Reads the (at most one) <c>[OpenApiInfo]</c> assembly attribute that provides
+    /// rich metadata for the <c>info</c> object (description, summary, termsOfService,
+    /// contact, license).
+    /// </summary>
+    private static OpenApiInfoMetadata? ReadOpenApiInfoMetadata(Compilation compilation)
+    {
+        foreach (var attr in compilation.Assembly.GetAttributes())
+        {
+            if (attr.AttributeClass?.Name != "OpenApiInfoAttribute") continue;
+
+            var meta = new OpenApiInfoMetadata();
+            foreach (var named in attr.NamedArguments)
+            {
+                switch (named.Key)
+                {
+                    case "Description" when named.Value.Value is string v:
+                        meta.Description = v;
+                        break;
+                    case "Summary" when named.Value.Value is string v:
+                        meta.Summary = v;
+                        break;
+                    case "TermsOfService" when named.Value.Value is string v:
+                        meta.TermsOfService = v;
+                        break;
+                    case "ContactName" when named.Value.Value is string v:
+                        meta.ContactName = v;
+                        break;
+                    case "ContactUrl" when named.Value.Value is string v:
+                        meta.ContactUrl = v;
+                        break;
+                    case "ContactEmail" when named.Value.Value is string v:
+                        meta.ContactEmail = v;
+                        break;
+                    case "LicenseName" when named.Value.Value is string v:
+                        meta.LicenseName = v;
+                        break;
+                    case "LicenseUrl" when named.Value.Value is string v:
+                        meta.LicenseUrl = v;
+                        break;
+                }
+            }
+
+            // Return even if all fields are null — the presence of the attribute is intentional.
+            return meta;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Reads all <c>[OpenApiServer]</c> assembly attributes from the compilation.
+    /// Servers are returned in declaration order (stable within a single build).
+    /// </summary>
+    private static List<OpenApiServerInfo> ReadOpenApiServers(Compilation compilation)
+    {
+        var result = new List<OpenApiServerInfo>();
+
+        foreach (var attr in compilation.Assembly.GetAttributes())
+        {
+            if (attr.AttributeClass?.Name != "OpenApiServerAttribute") continue;
+            if (attr.ConstructorArguments.Length == 0) continue;
+            if (attr.ConstructorArguments[0].Value is not string url) continue;
+
+            var info = new OpenApiServerInfo { Url = url };
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "Description" && named.Value.Value is string desc)
+                    info.Description = desc;
+            }
+
+            result.Add(info);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Reads all <c>[assembly: Webhook(...)]</c> attributes from the compilation.
+    /// Webhooks are returned sorted by name for deterministic emission.
+    /// The payload type is resolved to its simple name for schema registration, and
+    /// its properties are extracted via <see cref="TypePropertyExtractor"/> so that the
+    /// generated schema is fully documented (MELHORIA-4 fix — no more empty stubs).
+    /// </summary>
+    private static List<WebhookInfo> ReadWebhooks(Compilation compilation)
+    {
+        var result = new List<WebhookInfo>();
+
+        foreach (var attr in compilation.Assembly.GetAttributes())
+        {
+            if (attr.AttributeClass?.Name != "WebhookAttribute") continue;
+            if (attr.ConstructorArguments.Length < 2) continue;
+            if (attr.ConstructorArguments[0].Value is not string name) continue;
+
+            // Second constructor arg is the payload Type (INamedTypeSymbol at compile time).
+            if (attr.ConstructorArguments[1].Value is not INamedTypeSymbol payloadTypeSym) continue;
+
+            var info = new WebhookInfo
+            {
+                Name = name,
+                PayloadTypeName = payloadTypeSym.Name
+            };
+
+            foreach (var named in attr.NamedArguments)
+            {
+                switch (named.Key)
+                {
+                    case "Method" when named.Value.Value is string m:
+                        info.Method = m.ToLowerInvariant();
+                        break;
+                    case "Summary" when named.Value.Value is string s:
+                        info.Summary = s;
+                        break;
+                    case "Description" when named.Value.Value is string d:
+                        info.Description = d;
+                        break;
+                }
+            }
+
+            // MELHORIA-4: resolve payload schema so components.schemas contains
+            // real properties instead of an empty stub.
+            foreach (var schema in TypePropertyExtractor.DiscoverSchemas(payloadTypeSym))
+                info.ReferencedSchemas.Add(schema);
+
+            result.Add(info);
+        }
+
+        result.Sort(static (a, b) => string.Compare(a.Name, b.Name, System.StringComparison.Ordinal));
+        return result;
+    }
+
+    /// <summary>
+    /// Reads the (at most one) <c>[OpenApiExternalDocs]</c> assembly attribute.
+    /// </summary>
+    private static ExternalDocsInfo? ReadRootExternalDocs(Compilation compilation)
+    {
+        foreach (var attr in compilation.Assembly.GetAttributes())
+        {
+            if (attr.AttributeClass?.Name != "OpenApiExternalDocsAttribute") continue;
+            if (attr.ConstructorArguments.Length == 0) continue;
+            if (attr.ConstructorArguments[0].Value is not string url) continue;
+
+            var info = new ExternalDocsInfo { Url = url };
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "Description" && named.Value.Value is string desc)
+                    info.Description = desc;
+            }
+            return info;
+        }
+        return null;
     }
 
     /// <summary>
@@ -822,8 +1390,23 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
             .OrderBy(e => e.Code, StringComparer.Ordinal)
             .ToList();
 
+        // Navigation foundation — read assembly-level tag metadata, tag groups and root externalDocs.
+        var tagMetadata = ReadTagMetadata(compilation);
+        var tagGroups = ReadTagGroups(compilation);
+        var rootExternalDocs = ReadRootExternalDocs(compilation);
+
+        // Rich info + servers (Wave 3).
+        var openApiInfoMeta = ReadOpenApiInfoMetadata(compilation);
+        var servers = ReadOpenApiServers(compilation);
+
+        // Structural Wave 5 — webhooks (top-level OpenAPI 3.1).
+        var webhooks = ReadWebhooks(compilation);
+
         // Generate OpenAPI YAML
-        var yaml = OpenApiYamlGenerator.Generate(publicEndpoints, apiTitle, "1.0.0", unifiedCatalog);
+        var yaml = OpenApiYamlGenerator.Generate(
+            publicEndpoints, apiTitle, "1.0.0", unifiedCatalog,
+            tagMetadata, tagGroups, rootExternalDocs,
+            openApiInfoMeta, servers, webhooks);
 
         // Check if Native.OpenApi is referenced (for IGeneratedOpenApiSpec support)
         var hasNativeOpenApi = compilation.ReferencedAssemblyNames

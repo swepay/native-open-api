@@ -50,19 +50,39 @@ public sealed class ApiExampleAttribute : Attribute
     /// <summary>
     /// Embedded-resource path of the request JSON payload. <c>null</c> means
     /// the example only carries a response (common for error scenarios).
+    /// Takes precedence over <see cref="RequestValue"/> when both are set.
     /// </summary>
     public string? RequestJson { get; set; }
 
     /// <summary>
-    /// HTTP status code the <see cref="ResponseJson"/> is attached to.
+    /// HTTP status code the <see cref="ResponseJson"/> / <see cref="ResponseValue"/> is attached to.
     /// <c>0</c> means the example is request-only.
     /// </summary>
     public int ResponseStatus { get; set; }
 
     /// <summary>
     /// Embedded-resource path of the response JSON payload.
+    /// Takes precedence over <see cref="ResponseValue"/> when both are set.
     /// </summary>
     public string? ResponseJson { get; set; }
+
+    // ── Inline value support (Wave 3) ──────────────────────────────────
+
+    /// <summary>
+    /// Raw JSON string to embed inline as the request example <c>value</c>.
+    /// Use when the payload is small enough to be declared in-source.
+    /// Ignored when <see cref="RequestJson"/> is also set (path wins).
+    /// </summary>
+    /// <example><c>RequestValue = "{\"amount\": 100, \"currency\": \"BRL\"}"</c></example>
+    public string? RequestValue { get; set; }
+
+    /// <summary>
+    /// Raw JSON string to embed inline as the response example <c>value</c>.
+    /// Use when the payload is small enough to be declared in-source.
+    /// Ignored when <see cref="ResponseJson"/> is also set (path wins).
+    /// </summary>
+    /// <example><c>ResponseValue = "{\"id\": \"ord_123\", \"status\": \"pending\"}"</c></example>
+    public string? ResponseValue { get; set; }
 
     /// <summary>
     /// Initializes a new instance of <see cref="ApiExampleAttribute"/>.

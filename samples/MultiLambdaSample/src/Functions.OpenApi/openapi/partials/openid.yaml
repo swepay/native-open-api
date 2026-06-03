@@ -4,14 +4,19 @@ info:
   title: "OpenID Connect API"
   version: "1.0.0"
 
+tags:
+  - name: "Discovery"
+  - name: "OAuth2"
+  - name: "OpenID"
+
 paths:
   /.well-known/jwks.json:
     get:
       operationId: GetJwks
       summary: "Retorna JWKS para validação de tokens"
       tags:
-        - OpenID
-        - Discovery
+        - "OpenID"
+        - "Discovery"
       security: []
       responses:
         "200":
@@ -31,8 +36,8 @@ paths:
       operationId: GetOpenIdConfiguration
       summary: "Retorna metadata OpenID Connect"
       tags:
-        - OpenID
-        - Discovery
+        - "OpenID"
+        - "Discovery"
       security: []
       responses:
         "200":
@@ -53,8 +58,8 @@ paths:
       summary: "Troca authorization code por tokens"
       description: "Demonstra .Accepts(form-urlencoded) com schema inline de propriedades"
       tags:
-        - OpenID
-        - OAuth2
+        - "OpenID"
+        - "OAuth2"
       security: []
       requestBody:
         required: true
@@ -98,9 +103,28 @@ paths:
 
 components:
   schemas:
+    JwkKey:
+      type: object
+      properties:
+        kty:
+          type: string
+        use:
+          type: string
+        kid:
+          type: string
+        n:
+          type: string
+        e:
+          type: string
+      required:
+        - kty
+        - use
+        - kid
+        - n
+        - e
     JwksCommand:
       type: object
-      description: "Request type - properties to be documented"
+      description: "Object type - properties to be documented"
     JwksResponse:
       type: object
       properties:
@@ -112,7 +136,7 @@ components:
         - keys
     OpenIdConfigurationCommand:
       type: object
-      description: "Request type - properties to be documented"
+      description: "Object type - properties to be documented"
     OpenIdConfigurationResponse:
       type: object
       properties:
@@ -217,3 +241,14 @@ components:
         - code
         - recovery
         - requestId
+  responses:
+    BadRequest:
+      description: "The request was invalid or malformed."
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/SwepayProblemDetails"
+    Unauthorized:
+      description: "Authentication is required or the supplied credentials are invalid."
+    InternalServerError:
+      description: "An unexpected error occurred on the server."

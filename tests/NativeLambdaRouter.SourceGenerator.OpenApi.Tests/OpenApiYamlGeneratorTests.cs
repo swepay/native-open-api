@@ -554,9 +554,9 @@ public sealed class OpenApiYamlGeneratorTests
         // Act
         var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
 
-        // Assert
-        yaml.Should().Contain("- Inventory");
-        yaml.Should().Contain("- Products");
+        // Assert — tags are now emitted quoted (MELHORIA-5 fix)
+        yaml.Should().Contain("- \"Inventory\"");
+        yaml.Should().Contain("- \"Products\"");
     }
 
     [Fact]
@@ -669,11 +669,16 @@ public sealed class OpenApiYamlGeneratorTests
         // Act
         var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
 
-        // Assert — No description field on the operation level (only response-level descriptions exist)
-        var lines = yaml.Split('\n');
-        var operationDescriptions = lines.Count(l =>
-            l.Trim().StartsWith("description:") && !l.Contains("Successful") && !l.Contains("type -"));
-        operationDescriptions.Should().Be(0);
+        // Assert — No description field on the operation level.
+        // When endpoint.Description is null the generator must NOT emit "description:" between
+        // "summary:" and "tags:" in the operation block. We verify this by checking that the
+        // string "summary:" is never immediately followed (within 200 chars) by "description:".
+        // This is simpler than line-counting since SwepayProblemDetails and components/responses
+        // also emit "description:" lines which are unrelated to operation-level metadata.
+        var summaryIndex = yaml.IndexOf("summary:", StringComparison.Ordinal);
+        summaryIndex.Should().BeGreaterThan(-1, "the generated YAML must contain a summary field");
+        var afterSummary = yaml.Substring(summaryIndex, System.Math.Min(200, yaml.Length - summaryIndex));
+        afterSummary.Should().NotContain("\n      description:", "endpoint.Description is null so no operation description should follow summary");
     }
 
     // ── Accepts / Form-encoded ──────────────────────────────────────
