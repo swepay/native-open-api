@@ -7,7 +7,7 @@ OpenAPI 3.1 primitives for Native AOT .NET 10 — document loading, linting,
 merging, HTML rendering, and a catalog of UX attributes consumed by
 [`NativeLambdaRouter.SourceGenerator.OpenApi`](../NativeLambdaRouter.SourceGenerator.OpenApi/).
 
-- **Version:** `1.7.0`
+- **Version:** `1.8.2`
 - **Target:** `net10.0`
 - **Namespace root:** `Native.OpenApi`
 - **AOT:** zero runtime reflection; serialization through source-generated contexts
@@ -18,14 +18,74 @@ merging, HTML rendering, and a catalog of UX attributes consumed by
 
 ### Attributes — `Native.OpenApi.Attributes`
 
-| Attribute | Target | Purpose | Wave 1 § |
+#### Wave 1 (v1.7.0)
+
+| Attribute | Target | Purpose | § |
 |---|---|---|---|
 | `[HideFromDocs(reason?)]` | class/struct | hide operation from generated YAML | F01 |
 | `[Deprecated(sunset, alternative, reason)]` | class/struct | emit `deprecated: true` + `x-sunset` + `x-swepay-alternative` + `x-swepay-deprecation-reason` | F03 |
-| `[ApiExample(name, summary) { RequestJson, ResponseStatus, ResponseJson }]` (multi-use) | class/struct | wire named examples into `examples` maps | F09 |
+| `[ApiExample(name, summary) { RequestJson, ResponseStatus, ResponseJson, RequestValue?, ResponseValue? }]` (multi-use) | class/struct | wire named examples into `examples` maps; `RequestValue`/`ResponseValue` emit inline `value:` (v1.8.0) | F09 |
 | `[ErrorCatalog(typeof(T))]` | class/struct | attach an error-code catalog to the operation | F12 |
 | `[ErrorDefinition(code, httpStatus, userMessage, recovery) { DocUrl }]` | field (`const string`) | one entry inside a catalog | F12 |
 | `[ApiResponse(statusCode, responseType?, contentType = "application/json")]` (multi-use) | method (handler's `Handle`) | document per-status responses without the `.Produces<T>()` fluent | v1.6.0 |
+
+#### Navigation (v1.8.0) — assembly-level
+
+| Attribute | Constructor | Named properties | Emits |
+|---|---|---|---|
+| `[assembly: TagMetadata(name)]` | `name` | `Description`, `DisplayName`, `ExternalDocsUrl`, `ExternalDocsDescription` | root `tags[]` with `description`, `x-displayName`, `externalDocs` |
+| `[assembly: TagGroup(name, tags[])]` (multi-use) | `name`, `tags` | — | root `x-tagGroups` |
+| `[assembly: OpenApiExternalDocs(url)]` | `url` | `Description` | root `externalDocs` |
+| `[EndpointExternalDocs(url)]` | `url` | `Description` | operation `externalDocs` |
+
+#### Operation richness (v1.8.0) — class/struct
+
+| Attribute | Constructor | Named properties | Emits |
+|---|---|---|---|
+| `[CodeSample(lang, source)]` (multi-use) | `lang`, `source` | `Label` | `x-codeSamples[]` |
+| `[OperationBadge(name)]` (multi-use) | `name` | `Position`, `Color` | `x-badges[]` |
+| `[ScalarStability(Stability.X)]` | `Stability` enum value | — | `x-scalar-stability` (`stable`/`experimental`/`deprecated`) — Scalar-first, no Redoc equivalent |
+
+#### Schema richness (v1.8.0)
+
+| Attribute | Target | Named properties | Emits |
+|---|---|---|---|
+| `[property: OpenApiProperty]` | property | `Description`, `Example`, `Default`; string: `MinLength`, `MaxLength`, `Pattern`; numeric: `Minimum`, `Maximum`, `ExclusiveMinimum`, `ExclusiveMaximum`, `MultipleOf`; array: `MinItems`, `MaxItems`, `UniqueItems`; Scalar: `Order` → `x-order`, `AdditionalPropertiesName` → `x-additionalPropertiesName` | all matching OpenAPI 3.1 constraint keywords |
+| `[OpenApiEnumMember]` on enum fields | field | `Description`, `DisplayName` | parallel `x-enum-descriptions` + `x-enum-varnames` arrays (Scalar-first; no Redoc `x-enumDescriptions` dual-emit) |
+
+DataAnnotations (`[Required]`, `[StringLength]`, `[MinLength]`, `[MaxLength]`, `[Range]`, `[RegularExpression]`) are also read automatically when present on properties.
+
+#### Polymorphism (v1.8.0) — class
+
+| Attribute | Constructor | Emits |
+|---|---|---|
+| `[OpenApiDiscriminator(propertyName)]` | `propertyName` | `discriminator: { propertyName, mapping }` on the base schema |
+| `[OpenApiSubType(typeof(T), discriminatorValue)]` (multi-use) | `subType`, `discriminatorValue` | base: `oneOf: [$ref Sub1, ...]`; sub-type: `allOf: [$ref Base__Core, {own props}]` |
+
+C# inheritance is auto-detected — no attribute needed for `allOf` on subclass schemas.
+
+#### Document-level (v1.8.0) — assembly
+
+| Attribute | Constructor | Named properties | Emits |
+|---|---|---|---|
+| `[assembly: OpenApiInfo]` | — | `Description`, `Summary`, `TermsOfService`, `ContactName`, `ContactUrl`, `ContactEmail`, `LicenseName`, `LicenseUrl` | rich `info` object (title/version still come from MSBuild) |
+| `[assembly: OpenApiServer(url)]` (multi-use) | `url` | `Description` | `servers[]` |
+
+#### Structural (v1.8.0) — class/struct (multi-use unless noted)
+
+| Attribute | Constructor | Named properties | Emits |
+|---|---|---|---|
+| `[QueryParameter(name, parameterType?)]` | `name`, `parameterType` | `Required`, `Description` | `parameters: [{ in: query }]` |
+| `[HeaderParameter(name, parameterType?)]` | `name`, `parameterType` | `Required`, `Description` | `parameters: [{ in: header }]` |
+| `[ResponseHeader(statusCode, name, headerType?)]` | `statusCode`, `name`, `headerType` | `Required`, `Description` | `responses.{status}.headers` |
+| `[ResponseLink(statusCode, linkId)]` | `statusCode`, `linkId` | `OperationId`, `Parameters`, `Description` | `responses.{status}.links` |
+| `[Callback(name)]` | `name` | `Expression`, `Method`, `Summary`, `PayloadType` | operation `callbacks` (minimal form) |
+
+#### Structural (v1.8.0) — assembly
+
+| Attribute | Constructor | Named properties | Emits |
+|---|---|---|---|
+| `[assembly: Webhook(name, typeof(Payload))]` (multi-use) | `name`, `payloadType` | `Method`, `Summary`, `Description` | top-level `webhooks:` (payload schema registered in `components/schemas`) |
 
 ### Fluent extension — `Native.OpenApi.Extensions`
 
@@ -43,9 +103,10 @@ merging, HTML rendering, and a catalog of UX attributes consumed by
 
 | Type | Role |
 |---|---|
-| `OpenApiRendererOptions` | aggregate; `.Default` = pre-Wave-1 behaviour (no brand, no footer, no Mermaid) |
+| `OpenApiRendererOptions` | aggregate; `.Default` = pre-Wave-1 behaviour (no brand, no footer, no Mermaid); add `ScalarViewer` for v1.8.0 Scalar knobs |
 | `OpenApiBrandingOptions` | `PrimaryColor`, `AccentColor`, `LogoUrl`, `FaviconUrl`, `FontFamily`, `ThemeJsonOverride` |
 | `OpenApiFooterOptions` | `StatusUrl`, `SupportUrl`, `ChangelogUrl`, `SlaUrl`, `TermsUrl` |
+| `OpenApiScalarViewerOptions` (v1.8.0) | Scalar viewer knobs: `Theme`, `DarkMode`, `Layout`, `HideModels`, `HideDownloadButton`, `HideSidebar`, `HideTestRequestButton`, `DefaultHttpClientTargetKey`, `DefaultHttpClientClientKey`, `LocalAssetPath` |
 
 ### Core classes
 
@@ -240,6 +301,186 @@ flowchart LR
   A[1. Create realm] --> B[2. Register client] --> C[3. Issue token]
 ```
 ````
+
+---
+
+## Quick reference — v1.8.0
+
+### Tag groups and tag metadata
+
+```csharp
+// ApiDocumentation.cs (assembly-level declarations)
+[assembly: OpenApiInfo(
+    Description    = "Marketplace API — manage items, subscriptions and payments.",
+    Summary        = "Marketplace API",
+    TermsOfService = "https://example.com/terms",
+    ContactName    = "API Support",
+    ContactEmail   = "api@example.com",
+    LicenseName    = "Apache 2.0",
+    LicenseUrl     = "https://www.apache.org/licenses/LICENSE-2.0")]
+
+[assembly: OpenApiServer("https://api.example.com",         Description = "Production")]
+[assembly: OpenApiServer("https://sandbox.api.example.com", Description = "Sandbox")]
+
+[assembly: OpenApiExternalDocs("https://docs.example.com", Description = "Developer guide")]
+
+[assembly: TagMetadata("Orders",
+    Description  = "Operations related to order lifecycle — creation, updates and cancellation.",
+    DisplayName  = "Order Management",
+    ExternalDocsUrl         = "https://docs.example.com/orders",
+    ExternalDocsDescription = "Order domain guide")]
+
+[assembly: TagGroup("Commerce",       new[] { "Orders", "Products" })]
+[assembly: TagGroup("Administration", new[] { "Users",  "Roles"    })]
+```
+
+**Emits:**
+
+```yaml
+externalDocs:
+  description: "Developer guide"
+  url: "https://docs.example.com"
+tags:
+  - name: Orders
+    description: "Operations related to order lifecycle — creation, updates and cancellation."
+    x-displayName: "Order Management"
+    externalDocs:
+      description: "Order domain guide"
+      url: "https://docs.example.com/orders"
+x-tagGroups:
+  - name: Commerce
+    tags: [Orders, Products]
+  - name: Administration
+    tags: [Users, Roles]
+```
+
+### Code samples, badges and stability
+
+```csharp
+[CodeSample("curl",
+    source: """
+    curl -X POST https://api.example.com/v1/orders \
+         -H "Authorization: Bearer {token}" \
+         -H "Content-Type: application/json" \
+         -d '{"customerId":"cus_123","amount":49.90}'
+    """,
+    Label = "cURL")]
+[CodeSample("csharp",
+    source: "var resp = await http.PostAsJsonAsync(\"/v1/orders\", cmd);",
+    Label = "C# (HttpClient)")]
+[OperationBadge("beta",     Position = "after", Color = "#e5a505")]
+[OperationBadge("internal", Color    = "#888")]
+[ScalarStability(Stability.Experimental)]
+public sealed record CreateOrderCommand(string CustomerId, decimal Amount);
+```
+
+**Emits:**
+
+```yaml
+x-codeSamples:
+  - lang: curl
+    label: "cURL"
+    source: |
+      curl -X POST https://api.example.com/v1/orders \
+           -H "Authorization: Bearer {token}" \
+           -H "Content-Type: application/json" \
+           -d '{"customerId":"cus_123","amount":49.90}'
+  - lang: csharp
+    label: "C# (HttpClient)"
+    source: "var resp = await http.PostAsJsonAsync(\"/v1/orders\", cmd);"
+x-badges:
+  - name: beta
+    position: after
+    color: "#e5a505"
+  - name: internal
+    color: "#888"
+x-scalar-stability: experimental
+```
+
+### Polymorphic payment method (oneOf + discriminator)
+
+```csharp
+[OpenApiDiscriminator("kind")]
+[OpenApiSubType(typeof(CreditCardPayment), "credit_card")]
+[OpenApiSubType(typeof(PixPayment),        "pix")]
+public abstract class PaymentMethod
+{
+    public string Kind { get; set; } = "";
+}
+
+public sealed class CreditCardPayment : PaymentMethod
+{
+    public string CardToken { get; set; } = "";
+    public int    Installments { get; set; }
+}
+
+public sealed class PixPayment : PaymentMethod
+{
+    public string PixKey { get; set; } = "";
+}
+```
+
+**Emits:**
+
+```yaml
+components:
+  schemas:
+    PaymentMethod:
+      oneOf:
+        - $ref: '#/components/schemas/CreditCardPayment'
+        - $ref: '#/components/schemas/PixPayment'
+      discriminator:
+        propertyName: kind
+        mapping:
+          credit_card: '#/components/schemas/CreditCardPayment'
+          pix:         '#/components/schemas/PixPayment'
+    PaymentMethod__Core:
+      type: object
+      properties:
+        kind:
+          type: string
+    CreditCardPayment:
+      allOf:
+        - $ref: '#/components/schemas/PaymentMethod__Core'
+        - type: object
+          properties:
+            cardToken:
+              type: string
+            installments:
+              type: integer
+              format: int32
+    PixPayment:
+      allOf:
+        - $ref: '#/components/schemas/PaymentMethod__Core'
+        - type: object
+          properties:
+            pixKey:
+              type: string
+```
+
+### Scalar viewer configuration
+
+```csharp
+var options = new OpenApiRendererOptions
+{
+    Branding = new OpenApiBrandingOptions { PrimaryColor = "#0A2540", LogoUrl = "https://cdn.example.com/logo.svg" },
+    ScalarViewer = new OpenApiScalarViewerOptions
+    {
+        Theme                      = "midnight",
+        DarkMode                   = true,
+        Layout                     = "sidebar",
+        HideModels                 = false,
+        HideDownloadButton         = false,
+        HideSidebar                = false,
+        HideTestRequestButton      = false,
+        DefaultHttpClientTargetKey = "Shell",
+        DefaultHttpClientClientKey = "curl"
+        // LocalAssetPath = "./assets/scalar.js"  // air-gap only
+    }
+};
+
+var html = renderer.RenderScalar("/docs/openapi.yaml", "My API", options);
+```
 
 ---
 

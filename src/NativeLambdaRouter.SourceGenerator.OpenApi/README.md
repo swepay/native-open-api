@@ -6,7 +6,7 @@
 Roslyn Source Generator that emits OpenAPI 3.1 YAML at compile time from
 `NativeLambdaRouter` endpoint maps — zero runtime overhead, zero reflection.
 
-- **Version:** `1.7.0`
+- **Version:** `1.8.2`
 - **Target:** `netstandard2.0` (analyzer), consumed by `net10.0` projects
 - **Generated artifact:** `{OpenApiSpecName ?? AssemblyName}.Generated.GeneratedOpenApiSpec`
 - **Interface:** implements `Native.OpenApi.IGeneratedOpenApiSpec` when that package is referenced
@@ -23,10 +23,12 @@ The generator walks the syntax + semantic model of each compilation looking for:
 |---|---|
 | Route maps | `routes.MapGet<TCommand, TResponse>(...)`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete`, `Map("METHOD", ...)` |
 | Fluent chain | `.WithName`, `.WithSummary`, `.WithDescription`, `.WithTags`, `.Accepts`, `.Produces(contentType)`, `.ProducesProblem(statusCode)`, `.AllowAnonymous`, **`.ExcludeFromDocs`** |
-| Command attributes | `[EndpointName]`, `[EndpointSummary]`, `[EndpointDescription]`, `[Tags]`, `[Accepts]`, **`[HideFromDocs]`**, **`[Deprecated]`**, **`[ApiExample]`**, **`[ErrorCatalog]`** |
+| Command attributes (on TCommand class/struct) | `[EndpointName]`, `[EndpointSummary]`, `[EndpointDescription]`, `[Tags]`, `[Accepts]`, `[HideFromDocs]`, `[Deprecated]`, `[ApiExample]`, `[ErrorCatalog]`; v1.8.0 adds `[EndpointExternalDocs]`, `[CodeSample]`, `[OperationBadge]`, `[ScalarStability]`, `[QueryParameter]`, `[HeaderParameter]`, `[ResponseHeader]`, `[ResponseLink]`, `[Callback]`, `[OpenApiDiscriminator]`, `[OpenApiSubType]` |
+| Assembly attributes | v1.8.0: `[assembly: TagMetadata]`, `[assembly: TagGroup]`, `[assembly: OpenApiExternalDocs]`, `[assembly: OpenApiInfo]`, `[assembly: OpenApiServer]`, `[assembly: Webhook]` |
+| Property attributes | v1.8.0: `[property: OpenApiProperty]` on TCommand/TResponse properties; `[OpenApiEnumMember]` on enum fields |
 | Catalog attributes | `[ErrorDefinition]` on `const string` fields of the type referenced by `[ErrorCatalog(typeof(T))]` |
 | Handler attributes | `[ApiResponse]` on `Handle(...)` of `IRequestHandler<TCommand, TResponse>` implementations |
-| Schema types | all `TCommand` / `TResponse` types; records, classes, enums, nullable reference types, arrays, dictionaries |
+| Schema types | all `TCommand` / `TResponse` types and webhook/callback payload types; records, classes, enums, nullable reference types, arrays, dictionaries; v1.8.0: polymorphic hierarchies via `[OpenApiDiscriminator]`/`[OpenApiSubType]`, DataAnnotations on properties |
 
 ### What it emits
 
@@ -36,6 +38,14 @@ The generator walks the syntax + semantic model of each compilation looking for:
   - `EndpointList` — `(Method, Path)[]` of **discovered** endpoints
 - YAML `components.schemas.SwepayProblemDetails` whenever any operation serves `application/problem+json` without a typed body (F13)
 - Per-operation Wave 1 extensions (F03 deprecation fields, F09 examples map, F12 `x-swepay-errors` slice) plus the root `x-swepay-error-catalog`
+- v1.8.0 additions:
+  - Root: `tags` (with `description`, `x-displayName`, `externalDocs`), `x-tagGroups`, `externalDocs`, rich `info`, `servers`, `webhooks`
+  - Per-operation: `externalDocs`, `x-codeSamples`, `x-badges`, `x-scalar-stability`, `parameters` (query + header), `callbacks`, `links` under response headers, `headers` under responses
+  - Per-schema: property `description`/`example`/`default`/constraints, `x-order`, `x-additionalPropertiesName`, `x-enum-descriptions`, `x-enum-varnames`
+  - Polymorphism: `oneOf` + `discriminator` + `mapping` on base schemas; `allOf` on subtypes via a synthetic `{Base}__Core` schema
+  - `components/responses` (BadRequest, Unauthorized, InternalServerError) and `components/securitySchemes` (JwtBearer) now always emitted when referenced
+  - All webhook/callback payload types fully resolved in `components/schemas`
+  - All collections deterministically sorted
 
 ### Precedence rule
 
@@ -48,11 +58,11 @@ Fluent chain **wins** over command attributes when both are present — matches 
 ```xml
 <ItemGroup>
   <PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi"
-                    Version="1.7.0"
+                    Version="1.8.2"
                     OutputItemType="Analyzer"
                     ReferenceOutputAssembly="false" />
   <!-- Recommended: also reference the library for attributes and the IGeneratedOpenApiSpec interface -->
-  <PackageReference Include="NativeOpenApi" Version="1.7.0" />
+  <PackageReference Include="NativeOpenApi" Version="1.8.2" />
 </ItemGroup>
 ```
 
@@ -86,6 +96,55 @@ Full reference: [../Native.OpenApi/README.md](../Native.OpenApi/README.md) · Ro
 | `[ApiExample(name, summary) { RequestJson, ResponseStatus, ResponseJson }]` | `requestBody.content.*.examples.{name}` and/or `responses.{status}.content.*.examples.{name}` (via `externalValue`) |
 | `[ErrorCatalog(typeof(T))]` + `[ErrorDefinition]` fields | root `x-swepay-error-catalog` + per-op `x-swepay-errors` (codes filtered by declared response statuses) |
 | any `application/problem+json` response without typed body | `$ref: "#/components/schemas/SwepayProblemDetails"` + canonical schema injection |
+
+---
+
+## v1.8.0 — OpenAPI 3.1 documentation features
+
+All additions are opt-in. Scalar is the reference UI (**Scalar-first** policy); `x-scalar-*` and `x-enum-*` extensions are not dual-emitted for Redoc.
+
+### Assembly-level (document scope)
+
+| Attribute | Consumed via | Generated YAML |
+|---|---|---|
+| `[assembly: TagMetadata(name)]` | `compilation.Assembly.GetAttributes()` | root `tags[]` — `description`, `x-displayName`, `externalDocs` |
+| `[assembly: TagGroup(name, tags[])]` | `compilation.Assembly.GetAttributes()` | root `x-tagGroups` |
+| `[assembly: OpenApiExternalDocs(url)]` | `compilation.Assembly.GetAttributes()` | root `externalDocs` |
+| `[assembly: OpenApiInfo(...)]` | `compilation.Assembly.GetAttributes()` | rich `info` fields (description, summary, termsOfService, contact, license) |
+| `[assembly: OpenApiServer(url)]` | `compilation.Assembly.GetAttributes()` | `servers[]` |
+| `[assembly: Webhook(name, typeof(Payload))]` | `compilation.Assembly.GetAttributes()` | top-level `webhooks:`; payload schema in `components/schemas` |
+
+### Command-type scope (via `ApplyCommandAttributes`)
+
+| Attribute | Generated YAML |
+|---|---|
+| `[EndpointExternalDocs(url)]` | operation `externalDocs` |
+| `[CodeSample(lang, source)]` (multi-use) | operation `x-codeSamples[]` |
+| `[OperationBadge(name)]` (multi-use) | operation `x-badges[]` |
+| `[ScalarStability(Stability.X)]` | operation `x-scalar-stability` |
+| `[QueryParameter(name, type?)]` (multi-use) | `parameters: [{ in: query }]` |
+| `[HeaderParameter(name, type?)]` (multi-use) | `parameters: [{ in: header }]` |
+| `[ResponseHeader(statusCode, name, type?)]` (multi-use) | `responses.{status}.headers` |
+| `[ResponseLink(statusCode, linkId)]` (multi-use) | `responses.{status}.links` |
+| `[Callback(name)]` (multi-use) | operation `callbacks` |
+| `[OpenApiDiscriminator(propertyName)]` + `[OpenApiSubType(typeof(T), value)]` | base: `oneOf` + `discriminator`; subtypes: `allOf: [$ref Base__Core, {own}]` |
+| `[ApiExample]` with `RequestValue`/`ResponseValue` | inline `value:` examples (in addition to `externalValue`) |
+
+### Property/field scope (via `TypePropertyExtractor`)
+
+| Attribute | Generated YAML |
+|---|---|
+| `[property: OpenApiProperty(...)]` | property `description`, `example`, `default`, string/numeric/array constraints, `x-order`, `x-additionalPropertiesName` |
+| `[OpenApiEnumMember(Description, DisplayName)]` on enum fields | `x-enum-descriptions`, `x-enum-varnames` parallel arrays |
+| DataAnnotations (`[Required]`, `[StringLength]`, `[Range]`, `[RegularExpression]`, `[MinLength]`, `[MaxLength]`) | equivalent OpenAPI 3.1 constraint keywords |
+
+### Bug fixes that affect emitted YAML (v1.8.0)
+
+| Area | Fix |
+|---|---|
+| `components/responses` | `BadRequest`, `Unauthorized`, `InternalServerError` entries now always emitted when referenced by operations (previously dangling `$ref`) |
+| `components/securitySchemes` | `JwtBearer` (http/bearer/JWT) now always emitted when referenced (previously dangling `$ref`) |
+| Multi-line YAML scalars | `EscapeYamlString` now escapes `\n`/`\r` — rich `info.description` and other multi-line strings no longer produce malformed double-quoted YAML scalars |
 
 ---
 

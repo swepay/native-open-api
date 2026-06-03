@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.2] - 2026-06-02 — Documentation
+
+### Changed
+
+- **READMEs updated for v1.8.0 features.** Root `README.md`, `src/Native.OpenApi/README.md`
+  and `src/NativeLambdaRouter.SourceGenerator.OpenApi/README.md` now document the full
+  v1.8.0 surface: all 20 new attributes (navigation, operation richness, schema richness,
+  polymorphism, document-level, structural), `OpenApiScalarViewerOptions`, the new emitted
+  OpenAPI keywords/extensions, and the `components/responses` + `securitySchemes` fixes.
+  Includes v1.8.0 feature matrices and YAML output snippets. Attribute names/signatures
+  verified against source. Docs-only release; no code or behavior changes.
+
+## [1.8.1] - 2026-06-02 — Packaging & security fixes
+
+### Fixed
+
+- **NuGet pack (NU5128 / NU5017).** The source-generator package now ships its assembly via
+  `BuildOutputTargetFolder=analyzers/dotnet/cs` (real build output, dependencies suppressed),
+  producing no `lib/ref` folder. This clears both NU5128 (lib without matching dependency
+  group) and NU5017 (no dependencies nor content); `dotnet pack --no-build` exits 0 and the
+  generator loads correctly from the produced package.
+
+### Security
+
+- **YamlDotNet 16.3.0 → 18.0.0** in `Native.OpenApi`, the generator test project and the
+  central `Directory.Packages.props`. Clears the vulnerable 16.3.0 and resolves the NU1605
+  downgrade against `NativeOpenApi`'s transitive requirement.
+
 ## [1.8.0] - 2026-06-02 — OpenAPI 3.1 documentation feature expansion
 
 Large opt-in expansion of OpenAPI 3.1 documentation features rendered by **Scalar**
