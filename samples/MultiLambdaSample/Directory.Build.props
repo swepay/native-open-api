@@ -9,6 +9,13 @@
   <ItemGroup>
     <CompilerVisibleProperty Include="OpenApiSpecName" />
     <CompilerVisibleProperty Include="OpenApiSpecTitle" />
+    <!--
+      Merge-architecture opt-out: must be declared here because the generator is
+      referenced via ProjectReference (not NuGet), so the build/*.props from the
+      package is not auto-imported. Exposing it here makes the property visible to
+      the Roslyn analyzer in all producer projects under this solution.
+    -->
+    <CompilerVisibleProperty Include="OpenApiEmitStandardComponents" />
   </ItemGroup>
 
 </Project>

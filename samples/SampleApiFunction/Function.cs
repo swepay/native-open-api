@@ -22,30 +22,35 @@ public sealed class Function : RoutedApiGatewayFunction
         // GET /v1/items — deprecated via [Deprecated] on GetItemsCommand.
         routes.MapGet<GetItemsCommand, GetItemsResponse>(
             "/v1/items",
-            ctx => new GetItemsCommand());
+            ctx => new GetItemsCommand())
+            .WithTags("Items");
 
         // GET /v1/items/{id}
         routes.MapGet<GetItemByIdCommand, GetItemByIdResponse>(
             "/v1/items/{id}",
-            ctx => new GetItemByIdCommand(ctx.PathParameters["id"]));
+            ctx => new GetItemByIdCommand(ctx.PathParameters["id"]))
+            .WithTags("Items");
 
         // POST /v1/items — the 422 response on the handler has no typed body;
         // the generator points it at SwepayProblemDetails (RFC § F13).
         routes.MapPost<CreateItemCommand, CreateItemResponse>(
             "/v1/items",
-            ctx => JsonSerializer.Deserialize(ctx.Body!, AppJsonContext.Default.CreateItemCommand)!);
+            ctx => JsonSerializer.Deserialize(ctx.Body!, AppJsonContext.Default.CreateItemCommand)!)
+            .WithTags("Items");
 
         // PUT /v1/items/{id}
         routes.MapPut<UpdateItemCommand, UpdateItemResponse>(
             "/v1/items/{id}",
             ctx => new UpdateItemCommand(
                 ctx.PathParameters["id"],
-                JsonSerializer.Deserialize(ctx.Body!, AppJsonContext.Default.UpdateItemRequest)!));
+                JsonSerializer.Deserialize(ctx.Body!, AppJsonContext.Default.UpdateItemRequest)!))
+            .WithTags("Items");
 
         // DELETE /v1/items/{id}
         routes.MapDelete<DeleteItemCommand, DeleteItemResponse>(
             "/v1/items/{id}",
-            ctx => new DeleteItemCommand(ctx.PathParameters["id"]));
+            ctx => new DeleteItemCommand(ctx.PathParameters["id"]))
+            .WithTags("Items");
 
         // RFC § F01 — hidden via [HideFromDocs] on the TCommand.
         routes.MapGet<HealthCheckCommand, Responses.HealthCheckResponse>(
@@ -56,7 +61,8 @@ public sealed class Function : RoutedApiGatewayFunction
         // x-additionalPropertiesName, x-order.
         routes.MapPost<CreateProductCommand, CreateProductResponse>(
             "/v1/products",
-            ctx => JsonSerializer.Deserialize(ctx.Body!, AppJsonContext.Default.CreateProductCommand)!);
+            ctx => JsonSerializer.Deserialize(ctx.Body!, AppJsonContext.Default.CreateProductCommand)!)
+            .WithTags("Products");
 
         // RFC § F01 — hidden via the fluent .ExcludeFromDocs() marker on the
         // route (alternative to annotating the TCommand).
@@ -73,20 +79,24 @@ public sealed class Function : RoutedApiGatewayFunction
         //   • BankTransfer  → allOf [$ref PaymentMethod, {own props}]
         routes.MapGet<GetPaymentMethodCommand, GetPaymentMethodResponse>(
             "/v1/payment-methods/{id}",
-            ctx => new GetPaymentMethodCommand(ctx.PathParameters["id"]));
+            ctx => new GetPaymentMethodCommand(ctx.PathParameters["id"]))
+            .WithTags("Payments");
 
         routes.MapGet<ListPaymentMethodsCommand, ListPaymentMethodsResponse>(
             "/v1/payment-methods",
-            ctx => new ListPaymentMethodsCommand());
+            ctx => new ListPaymentMethodsCommand())
+            .WithTags("Payments");
 
         // Structural Wave 5 — query+header params, response headers, links and callbacks.
         routes.MapGet<ListItemsPagedCommand, ListItemsPagedResponse>(
             "/v1/items/paged",
-            ctx => new ListItemsPagedCommand());
+            ctx => new ListItemsPagedCommand())
+            .WithTags("Items");
 
         routes.MapPost<CreateOrderCommand, CreateOrderResponse>(
             "/v1/orders",
-            ctx => new CreateOrderCommand());
+            ctx => new CreateOrderCommand())
+            .WithTags("Orders");
     }
 
     protected override async Task<object> ExecuteCommandAsync(RouteMatch match, RouteContext context, IMediator mediator)

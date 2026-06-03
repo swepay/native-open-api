@@ -68,6 +68,14 @@ internal static class OpenApiYamlGenerator
     /// (description, summary, termsOfService, contact, license), root
     /// <c>servers</c> array, and structural features (query/header parameters,
     /// response headers, response links, callbacks, and top-level webhooks).
+    /// When <paramref name="emitStandardComponents"/> is <c>false</c>, the
+    /// <c>components/responses</c> (BadRequest, Unauthorized, InternalServerError) and
+    /// <c>components/securitySchemes</c> (JwtBearer) are suppressed. Use this in
+    /// merge-producer projects where those definitions are provided by a shared common file.
+    /// The <c>SwepayProblemDetails</c> schema is still emitted whenever at least one
+    /// operation directly references it via <c>application/problem+json</c>, regardless
+    /// of <paramref name="emitStandardComponents"/>. Operation-level <c>$ref</c>s and
+    /// <c>security:</c> entries are preserved regardless.
     /// </summary>
     public static string Generate(
         IReadOnlyList<EndpointInfo> endpoints,
@@ -79,7 +87,8 @@ internal static class OpenApiYamlGenerator
         ExternalDocsInfo? rootExternalDocs,
         OpenApiInfoMetadata? infoMetadata,
         IReadOnlyList<OpenApiServerInfo> servers,
-        IReadOnlyList<WebhookInfo> webhooks)
+        IReadOnlyList<WebhookInfo> webhooks,
+        bool emitStandardComponents = true)
     {
         var sb = new StringBuilder();
 
@@ -486,22 +495,33 @@ internal static class OpenApiYamlGenerator
         }
 
         // RFC § F13 — inject the canonical SwepayProblemDetails schema.
-        // The schema is always emitted because components/responses/BadRequest
-        // references it via $ref, and that response entry is always emitted.
-        // (Previously only emitted when an endpoint used application/problem+json —
-        // expanded here to cover the dangling-$ref BUG-2 fix.)
-        AppendSwepayProblemDetailsSchema(sb);
-
-        // BUG-2 fix: emit components/responses to back the $ref used in every operation.
-        // Always emitted when there are endpoints (the $refs are always present unless
-        // the caller explicitly covers all three status codes via AdditionalProduces).
-        AppendComponentsResponses(sb);
-
-        // BUG-3 fix: emit components/securitySchemes when at least one endpoint requires auth.
-        if (AnyAuthenticatedEndpoint(endpoints))
+        // Emitted when emitStandardComponents is true (because components/responses/BadRequest
+        // references it via $ref), OR when any endpoint directly serves application/problem+json
+        // (those operations emit an inline $ref to this schema).
+        // In merge-producer mode (emitStandardComponents=false) without any problem+json
+        // endpoint, the common file owns the definition and we omit it to avoid conflicts.
+        if (emitStandardComponents || AnyProblemJsonResponse(endpoints))
         {
-            AppendSecuritySchemes(sb);
+            AppendSwepayProblemDetailsSchema(sb);
         }
+
+        if (emitStandardComponents)
+        {
+            // BUG-2 fix: emit components/responses to back the $ref used in every operation.
+            // Always emitted in standalone mode (the $refs are always present unless
+            // the caller explicitly covers all three status codes via AdditionalProduces).
+            AppendComponentsResponses(sb);
+
+            // BUG-3 fix: emit components/securitySchemes when at least one endpoint requires auth.
+            if (AnyAuthenticatedEndpoint(endpoints))
+            {
+                AppendSecuritySchemes(sb);
+            }
+        }
+        // else: emitStandardComponents=false (merge-producer mode).
+        // components/responses and securitySchemes are expected from the shared common files;
+        // skip them to avoid merge conflicts.
+        // SwepayProblemDetails is emitted above when directly referenced by operations.
 
         return sb.ToString();
     }

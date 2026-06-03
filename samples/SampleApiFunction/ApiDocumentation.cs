@@ -37,8 +37,10 @@ using SampleApiFunction.Responses;
     Description = "Swepay Marketplace developer guide")]
 
 // ── Tag groups (rendered as collapsible sections in Redoc/Scalar sidebar) ──────
-[assembly: TagGroup("Catalog Management", new[] { "Items" })]
-[assembly: TagGroup("Infrastructure",     new[] { "Health" })]
+// Every tag used by a visible operation must appear in at least one group;
+// tags absent from x-tagGroups are hidden by Redoc when x-tagGroups is present.
+[assembly: TagGroup("Commerce",  new[] { "Items", "Products", "Orders" })]
+[assembly: TagGroup("Payments",  new[] { "Payments" })]
 
 // ── Tag metadata (description + display name + per-tag external docs) ───────────
 [assembly: TagMetadata(
@@ -49,9 +51,19 @@ using SampleApiFunction.Responses;
     ExternalDocsUrl = "https://docs.example.com/marketplace/items")]
 
 [assembly: TagMetadata(
-    "Health",
-    Description = "Infrastructure health-check endpoints (ops-only, hidden from partner docs).",
-    DisplayName = "Infrastructure Health")]
+    "Products",
+    Description = "Operations for managing marketplace products — creating and configuring product listings.",
+    DisplayName = "Products")]
+
+[assembly: TagMetadata(
+    "Orders",
+    Description = "Operations for placing and tracking marketplace orders.",
+    DisplayName = "Orders")]
+
+[assembly: TagMetadata(
+    "Payments",
+    Description = "Operations for managing payment methods — listing and retrieving card or bank transfer details.",
+    DisplayName = "Payment Methods")]
 
 // ── Webhooks (Structural Wave 5 — OpenAPI 3.1 top-level webhooks) ──────────────
 // The ItemCreatedEvent payload type is defined in Responses.cs.

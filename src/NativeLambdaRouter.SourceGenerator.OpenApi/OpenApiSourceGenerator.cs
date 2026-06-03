@@ -1172,6 +1172,8 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
 
     /// <summary>
     /// Extracts [ApiResponse] attributes from a method and adds them to the endpoint's AdditionalProduces.
+    /// Also runs <see cref="TypePropertyExtractor.DiscoverSchemas"/> on every named response type so that
+    /// the schemas are registered in <c>components/schemas</c> and no dangling <c>$ref</c> is emitted.
     /// </summary>
     private static void ExtractApiResponseAttributes(IMethodSymbol method, EndpointInfo endpoint)
     {
@@ -1190,9 +1192,11 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
 
             // Extract response type (optional, 2nd parameter)
             string? responseTypeName = null;
-            if (attr.ConstructorArguments.Length > 1 && attr.ConstructorArguments[1].Value is INamedTypeSymbol responseTypeSymbol)
+            INamedTypeSymbol? responseTypeSymbol = null;
+            if (attr.ConstructorArguments.Length > 1 && attr.ConstructorArguments[1].Value is INamedTypeSymbol rts)
             {
-                responseTypeName = responseTypeSymbol.Name;
+                responseTypeSymbol = rts;
+                responseTypeName = rts.Name;
             }
 
             // Extract content type (optional, 3rd parameter, defaults to "application/json")
@@ -1208,6 +1212,19 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
                 ResponseTypeSimpleName = responseTypeName,
                 ContentType = contentType
             });
+
+            // BUG-FIX (dangling $ref): discover and register all schemas reachable from
+            // the response type so they are emitted under components/schemas.
+            // Without this, a $ref: "#/components/schemas/ProblemDetails" would be emitted
+            // for every [ApiResponse(statusCode, typeof(ProblemDetails))] without ever
+            // defining ProblemDetails in the components section.
+            if (responseTypeSymbol != null)
+            {
+                foreach (var schema in TypePropertyExtractor.DiscoverSchemas(responseTypeSymbol))
+                {
+                    endpoint.ReferencedSchemas.Add(schema);
+                }
+            }
         }
     }
 
@@ -1335,6 +1352,12 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         optionsProvider.GlobalOptions.TryGetValue("build_property.OpenApiSpecName", out var specName);
         optionsProvider.GlobalOptions.TryGetValue("build_property.OpenApiSpecTitle", out var specTitle);
 
+        // OpenApiEmitStandardComponents: defaults to true. Set to false in merge-producer projects
+        // to prevent emission of components/responses and components/securitySchemes that would
+        // conflict with shared 'common' files consumed by OpenApiDocumentMerger.
+        optionsProvider.GlobalOptions.TryGetValue("build_property.OpenApiEmitStandardComponents", out var emitStdComponentsRaw);
+        var emitStandardComponents = !string.Equals(emitStdComponentsRaw, "false", System.StringComparison.OrdinalIgnoreCase);
+
         var baseName = !string.IsNullOrWhiteSpace(specName)
             ? specName!.Trim()
             : (compilation.AssemblyName ?? "API");
@@ -1406,7 +1429,8 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         var yaml = OpenApiYamlGenerator.Generate(
             publicEndpoints, apiTitle, "1.0.0", unifiedCatalog,
             tagMetadata, tagGroups, rootExternalDocs,
-            openApiInfoMeta, servers, webhooks);
+            openApiInfoMeta, servers, webhooks,
+            emitStandardComponents);
 
         // Check if Native.OpenApi is referenced (for IGeneratedOpenApiSpec support)
         var hasNativeOpenApi = compilation.ReferencedAssemblyNames

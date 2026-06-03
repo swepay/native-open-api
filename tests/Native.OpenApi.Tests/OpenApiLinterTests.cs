@@ -92,6 +92,31 @@ public class OpenApiLinterTests
     }
 
     [Fact]
+    public void Lint_ShouldNotReturnVersionError_ForWellKnownPaths()
+    {
+        // RFC 8615 well-known URIs (OIDC discovery, JWKS) are standardized at a
+        // fixed location and cannot carry a version segment.
+        var linter = new OpenApiLinter(OpenApiLintOptions.Empty);
+        var root = JsonNode.Parse("""
+        {
+            "openapi": "3.1.0",
+            "paths": {
+                "/.well-known/openid-configuration": {
+                    "get": {
+                        "security": [],
+                        "responses": {"200": {"$ref": "#/components/responses/Success"}}
+                    }
+                }
+            }
+        }
+        """)!;
+
+        var errors = linter.Lint("openid.yaml", root);
+
+        errors.Should().NotContain(e => e.Contains("must include version"));
+    }
+
+    [Fact]
     public void Lint_ShouldNotReturnError_WhenSecurityIsEmptyArray_AnonymousEndpoint()
     {
         // Arrange

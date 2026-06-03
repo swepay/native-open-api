@@ -84,9 +84,11 @@ public sealed class OpenApiHtmlRenderer
 
         sb.Append("    <script>\n");
         sb.Append("        (function() {\n");
-        sb.Append("            var basePath = window.location.pathname.replace(/\\/docs\\/redoc.*/, '');\n");
-        sb.Append("            var specUrl = basePath + '").Append(JsString(specPath)).Append("';\n");
-        sb.Append("            Redoc.init(specUrl, ").Append(BuildRedocTheme(options)).Append(", document.querySelector('redoc'));\n");
+        // The spec URL is the caller-supplied specPath, honored verbatim. The
+        // browser resolves it relative to the current document, so both an
+        // absolute path ("/openapi.yaml") and a relative one ("openapi.yaml")
+        // work without assuming any particular route convention.
+        sb.Append("            Redoc.init('").Append(JsString(specPath)).Append("', ").Append(BuildRedocTheme(options)).Append(", document.querySelector('redoc'));\n");
         if (options.EnableMermaid)
         {
             sb.Append(MermaidPreprocessorJs());
@@ -158,13 +160,12 @@ public sealed class OpenApiHtmlRenderer
         sb.Append("    <style>").Append(BuildBaseCss(options)).Append("</style>\n");
         sb.Append("</head>\n<body>\n");
 
-        // The spec URL is resolved at runtime relative to the current page path
-        // so the same HTML works regardless of sub-path mounting.
-        // data-url and data-configuration are HTML-attribute-escaped; the JS
-        // below reads them with getAttribute, never via innerHTML, avoiding
-        // second-order HTML injection.
+        // data-url is the caller-supplied specPath, honored verbatim (the
+        // browser resolves it relative to the current document). Both data-url
+        // and data-configuration are HTML-attribute-escaped.
         sb.Append("    <script\n");
         sb.Append("        id=\"api-reference\"\n");
+        sb.Append("        data-url=\"").Append(HtmlEscape(specPath)).Append("\"\n");
         sb.Append("        data-configuration=\"").Append(HtmlEscape(configJson)).Append("\"\n");
         sb.Append("    ></script>\n");
 
@@ -173,23 +174,17 @@ public sealed class OpenApiHtmlRenderer
             sb.Append("    <script src=\"").Append(HtmlEscape(MermaidScriptSrc(options))).Append("\"></script>\n");
         }
 
-        sb.Append("    <script>\n");
-        sb.Append("        (function() {\n");
-        // Resolve spec URL at runtime to handle arbitrary sub-path mounts.
-        sb.Append("            var basePath = window.location.pathname.replace(/\\/docs\\/scalar.*/, '');\n");
-        sb.Append("            var specUrl = basePath + '").Append(JsString(specPath)).Append("';\n");
-        // Patch in the resolved URL. Scalar reads data-url before the module
-        // executes, so set it before loading the script.
-        sb.Append("            document.getElementById('api-reference').setAttribute('data-url', specUrl);\n");
-        sb.Append("            var script = document.createElement('script');\n");
-        sb.Append("            script.src = '").Append(JsString(scriptSrc)).Append("';\n");
-        sb.Append("            document.body.appendChild(script);\n");
+        // Load Scalar; it reads data-url and data-configuration from the
+        // script tag above on initialization.
+        sb.Append("    <script src=\"").Append(HtmlEscape(scriptSrc)).Append("\"></script>\n");
         if (options.EnableMermaid)
         {
+            sb.Append("    <script>\n");
+            sb.Append("        (function() {\n");
             sb.Append(MermaidPreprocessorJs());
+            sb.Append("        })();\n");
+            sb.Append("    </script>\n");
         }
-        sb.Append("        })();\n");
-        sb.Append("    </script>\n");
 
         AppendFooter(sb, options);
 
