@@ -56,20 +56,20 @@ public sealed class GetItemByIdCommand : IRequest<GetItemByIdResponse>
 [ApiExample(
     name: "happy-path",
     summary: "Simple item with valid price",
-    RequestJson = "examples/create-item/happy.json",
+    RequestValue = "{\"name\": \"Widget Pro\", \"description\": \"A professional-grade widget\", \"price\": 29.99}",
     ResponseStatus = 201,
-    ResponseJson = "examples/create-item/happy-response.json")]
+    ResponseValue = "{\"id\": \"item_wp001\", \"message\": \"Item created successfully\"}")]
 [ApiExample(
     name: "inline-minimal",
     summary: "Minimal inline request (Wave 3)",
     RequestValue = "{\"name\": \"Inline Widget\", \"description\": \"Created inline\", \"price\": 4.99}",
     ResponseStatus = 201,
-    ResponseValue = "{\"id\": \"item_inline001\", \"name\": \"Inline Widget\"}")]
+    ResponseValue = "{\"id\": \"item_inline001\", \"message\": \"Item created successfully\"}")]
 [ApiExample(
     name: "validation-error",
-    summary: "Missing name",
+    summary: "Missing name — 422 inline example",
     ResponseStatus = 422,
-    ResponseJson = "examples/create-item/validation-error.json")]
+    ResponseValue = "{\"type\": \"https://docs.swepay.com.br/errors/ITEM_NAME_REQUIRED\", \"title\": \"Validation failed\", \"status\": 422, \"detail\": \"O campo name é obrigatório.\", \"code\": \"ITEM_NAME_REQUIRED\", \"recovery\": \"Reenvie a requisição preenchendo o campo name.\", \"requestId\": \"req_abc123\"}")]
 [ErrorCatalog(typeof(SwepayErrors))]
 [EndpointExternalDocs(
     "https://docs.example.com/marketplace/items/create",

@@ -54,7 +54,11 @@ public sealed class OpenApiLinter
         {
             var path = pathPair.Key;
 
-            if (!path.Contains("/v", StringComparison.OrdinalIgnoreCase))
+            // Well-known URIs (RFC 8615) — e.g. /.well-known/openid-configuration,
+            // /.well-known/jwks.json — are standardized discovery endpoints that
+            // intentionally cannot be versioned, so they are exempt from the
+            // version-in-path rule.
+            if (!IsVersionExempt(path) && !path.Contains("/v", StringComparison.OrdinalIgnoreCase))
             {
                 errors.Add($"{sourceName}: path '{path}' must include version (e.g., /v1/)");
             }
@@ -192,6 +196,14 @@ public sealed class OpenApiLinter
         }
         return false;
     }
+
+    /// <summary>
+    /// Paths exempt from the version-in-path rule. Currently RFC 8615
+    /// well-known URIs (e.g. OIDC discovery and JWKS endpoints), which are
+    /// standardized at a fixed location and cannot carry a version segment.
+    /// </summary>
+    private static bool IsVersionExempt(string path) =>
+        path.StartsWith("/.well-known/", StringComparison.OrdinalIgnoreCase);
 
     private bool IsGenericPath(string path)
     {

@@ -38,5 +38,16 @@
 
     <!-- F02 (wave 3, prop reserved for forward-compat) — default audience filter -->
     <CompilerVisibleProperty Include="OpenApiDefaultAudience" />
+
+    <!--
+      Merge-architecture opt-out.
+      Set to 'false' in producer projects that participate in a multi-spec merge so that
+      components/responses (BadRequest/Unauthorized/InternalServerError) and
+      components/securitySchemes (JwtBearer) are NOT emitted by each producer.
+      Those definitions are expected to come from the shared 'common' files consumed by
+      the merger. The $refs inside operations are preserved regardless of this flag.
+      Default: true (standalone projects always emit the standard components).
+    -->
+    <CompilerVisibleProperty Include="OpenApiEmitStandardComponents" />
   </ItemGroup>
 </Project>

@@ -627,15 +627,15 @@ public class OpenApiHtmlRendererTests
     }
 
     [Fact]
-    public void RenderScalar_WithXssInSpecPath_EscapesInJsString()
+    public void RenderScalar_WithXssInSpecPath_HtmlEscapesInDataUrl()
     {
-        // A single-quote in the spec path must be escaped inside the JS string.
+        // specPath is emitted into the data-url HTML attribute, so it must be
+        // HTML-attribute-escaped (single quote -> &#x27;), not left raw.
         var html = _renderer.RenderScalar("/spec/o'malley.json", "API");
 
-        html.Should().Contain("\\'");
-        // The raw unescaped quote must not appear inside the JS string context.
-        // We verify the path is present but with escaping applied.
-        html.Should().Contain("o\\'malley.json");
+        html.Should().Contain("data-url=\"/spec/o&#x27;malley.json\"");
+        // The raw unescaped quote must not appear in the attribute value.
+        html.Should().NotContain("o'malley.json");
     }
 
     [Fact]
@@ -765,27 +765,39 @@ public class OpenApiHtmlRendererTests
     }
 
     // -------------------------------------------------------------------------
-    // Spec URL runtime resolution
+    // Spec URL — honored verbatim from the specPath argument (no route-convention
+    // assumptions). The browser resolves it relative to the current document.
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void RenderScalar_SpecUrlResolution_SetsDataUrlViaJs()
+    public void RenderScalar_SpecUrl_IsHonoredVerbatimInDataUrl()
     {
-        // The spec URL must be set via setAttribute so the path is resolved
-        // at runtime (not baked in as a static href).
-        var html = _renderer.RenderScalar("/openapi.yaml", "API");
+        var html = _renderer.RenderScalar("/some/custom/openapi.yaml", "API");
 
-        html.Should().Contain("setAttribute('data-url', specUrl)");
+        html.Should().Contain("data-url=\"/some/custom/openapi.yaml\"");
     }
 
     [Fact]
-    public void RenderScalar_SpecUrlResolution_BasepathStripsScalarSuffix()
+    public void RenderScalar_SpecUrl_DoesNotRecomputePathFromLocation()
     {
-        // The basePath regex must strip /docs/scalar... so the spec URL is
-        // resolved from the API root, not the docs sub-path.
+        // The old behaviour stripped "/docs/scalar" from window.location and
+        // appended the spec name, which broke any non-/docs mount point.
+        // Option 1: the specPath is used as-is.
         var html = _renderer.RenderScalar("/openapi.yaml", "API");
 
-        html.Should().Contain("replace(/\\/docs\\/scalar.*/, '')");
+        html.Should().NotContain("window.location.pathname");
+        html.Should().NotContain("/docs/scalar");
+        html.Should().NotContain("setAttribute('data-url'");
+    }
+
+    [Fact]
+    public void RenderRedoc_SpecUrl_IsHonoredVerbatimInInit()
+    {
+        var html = _renderer.RenderRedoc("/some/custom/openapi.yaml", "API");
+
+        html.Should().Contain("Redoc.init('/some/custom/openapi.yaml'");
+        html.Should().NotContain("window.location.pathname");
+        html.Should().NotContain("/docs/redoc");
     }
 
     // -------------------------------------------------------------------------

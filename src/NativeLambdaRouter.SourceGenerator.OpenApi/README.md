@@ -6,7 +6,7 @@
 Roslyn Source Generator that emits OpenAPI 3.1 YAML at compile time from
 `NativeLambdaRouter` endpoint maps — zero runtime overhead, zero reflection.
 
-- **Version:** `1.8.2`
+- **Version:** `1.8.3`
 - **Target:** `netstandard2.0` (analyzer), consumed by `net10.0` projects
 - **Generated artifact:** `{OpenApiSpecName ?? AssemblyName}.Generated.GeneratedOpenApiSpec`
 - **Interface:** implements `Native.OpenApi.IGeneratedOpenApiSpec` when that package is referenced
@@ -58,11 +58,11 @@ Fluent chain **wins** over command attributes when both are present — matches 
 ```xml
 <ItemGroup>
   <PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi"
-                    Version="1.8.2"
+                    Version="1.8.3"
                     OutputItemType="Analyzer"
                     ReferenceOutputAssembly="false" />
   <!-- Recommended: also reference the library for attributes and the IGeneratedOpenApiSpec interface -->
-  <PackageReference Include="NativeOpenApi" Version="1.8.2" />
+  <PackageReference Include="NativeOpenApi" Version="1.8.3" />
 </ItemGroup>
 ```
 

@@ -2,17 +2,46 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.8.2] - 2026-06-02 — Documentation
+## [1.8.3] - 2026-06-03 — Renderer & generator fixes, docs
+
+### Fixed
+
+- **Renderer honors `specPath` verbatim.** `RenderScalar`/`RenderRedoc` now emit the
+  caller-supplied spec URL directly (`data-url="{specPath}"` / `Redoc.init('{specPath}', …)`)
+  instead of recomputing it at runtime by stripping a hard-coded `/docs/{viewer}` route and
+  appending `openapi.yaml`. The old behaviour broke whenever the docs were mounted on any
+  path other than `/docs/{viewer}` or the spec used a different name — the page loaded but the
+  document failed to load. The browser resolves the URL relative to the current document, so
+  both absolute (`/openapi.yaml`) and relative (`openapi.yaml`) paths work.
+- **No more dangling `$ref` for `[ApiResponse(typeof(T))]` types.** Types referenced only
+  through `[ApiResponse(statusCode, typeof(T))]` (e.g. `ProblemDetails`, `ErrorResponse`) are
+  now run through schema discovery and emitted under `components/schemas`. Previously the
+  generator emitted the `$ref` without the definition, which made Redoc render nothing and
+  Scalar show empty tags. Added an anti-dangling regression test that parses the spec and
+  asserts every referenced schema is defined.
 
 ### Changed
 
-- **READMEs updated for v1.8.0 features.** Root `README.md`, `src/Native.OpenApi/README.md`
-  and `src/NativeLambdaRouter.SourceGenerator.OpenApi/README.md` now document the full
-  v1.8.0 surface: all 20 new attributes (navigation, operation richness, schema richness,
-  polymorphism, document-level, structural), `OpenApiScalarViewerOptions`, the new emitted
-  OpenAPI keywords/extensions, and the `components/responses` + `securitySchemes` fixes.
-  Includes v1.8.0 feature matrices and YAML output snippets. Attribute names/signatures
-  verified against source. Docs-only release; no code or behavior changes.
+- **Sample (`SampleApiFunction`) tagging made consistent.** Operations are now tagged
+  `Items`/`Products`/`Orders`/`Payments` and every tag is placed in an `x-tagGroup`
+  (`Commerce`, `Payments`). Previously operations were auto-tagged `V1` while the tag groups
+  referenced `Items`/`Health`, so — because Redoc hides tags that are not in any group — the
+  rendered docs appeared empty. The three `externalValue` examples were converted to inline
+  `value:` so the sample is self-contained (no 404s for missing example files).
+
+### Added
+
+- **`docs/TROUBLESHOOTING.md`** — Sintoma → Causa → Solução guide covering empty docs / blank
+  tags (x-tagGroups), spec-not-loading (specPath), broken examples (externalValue), dangling
+  `$ref`, empty webhook schemas, multi-line `description` YAML, NU5128/NU5017 packaging,
+  NU1605 downgrade, AOT/trim, and how to serve the docs locally for validation. Linked from
+  the root `README.md`.
+
+### Notes
+
+- READMEs (root + both packages) document the full v1.8.0 surface (20 attributes,
+  `OpenApiScalarViewerOptions`, emitted keywords/extensions) — folded in from the unreleased
+  1.8.2 docs bump.
 
 ## [1.8.1] - 2026-06-02 — Packaging & security fixes
 

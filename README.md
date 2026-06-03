@@ -6,12 +6,12 @@
 Compile-time OpenAPI 3.1 for Native AOT .NET 10 APIs. Zero runtime reflection.
 Ships two NuGet packages + a Roslyn Source Generator.
 
-- **Current version:** `1.8.2`
+- **Current version:** `1.8.3`
 - **Target:** `net10.0` (library) / `netstandard2.0` (generator)
 - **AOT:** `PublishAot=true`, `IsTrimmable=true`, no runtime reflection
 - **OpenAPI:** 3.1-only
 - **Canonical docs:** [src/Native.OpenApi/README.md](src/Native.OpenApi/README.md) · [src/NativeLambdaRouter.SourceGenerator.OpenApi/README.md](src/NativeLambdaRouter.SourceGenerator.OpenApi/README.md)
-- **Changelog:** [docs/CHANGELOG.md](docs/CHANGELOG.md) · **UX RFC:** [docs/RFC-DOCUMENTACAO-UX.md](docs/RFC-DOCUMENTACAO-UX.md)
+- **Changelog:** [docs/CHANGELOG.md](docs/CHANGELOG.md) · **Troubleshooting:** [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) · **UX RFC:** [docs/RFC-DOCUMENTACAO-UX.md](docs/RFC-DOCUMENTACAO-UX.md)
 
 ---
 
@@ -167,8 +167,8 @@ Declared in [src/NativeLambdaRouter.SourceGenerator.OpenApi/build/NativeLambdaRo
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="NativeOpenApi" Version="1.8.2" />
-  <PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi" Version="1.8.2"
+  <PackageReference Include="NativeOpenApi" Version="1.8.3" />
+  <PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi" Version="1.8.3"
                     OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 </ItemGroup>
 ```
@@ -290,6 +290,7 @@ native-open-api/
 │   └── MultiLambdaSample/
 └── docs/
     ├── CHANGELOG.md
+    ├── TROUBLESHOOTING.md
     └── RFC-DOCUMENTACAO-UX.md
 ```
 

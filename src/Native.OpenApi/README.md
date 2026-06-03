@@ -7,7 +7,7 @@ OpenAPI 3.1 primitives for Native AOT .NET 10 — document loading, linting,
 merging, HTML rendering, and a catalog of UX attributes consumed by
 [`NativeLambdaRouter.SourceGenerator.OpenApi`](../NativeLambdaRouter.SourceGenerator.OpenApi/).
 
-- **Version:** `1.8.2`
+- **Version:** `1.8.3`
 - **Target:** `net10.0`
 - **Namespace root:** `Native.OpenApi`
 - **AOT:** zero runtime reflection; serialization through source-generated contexts

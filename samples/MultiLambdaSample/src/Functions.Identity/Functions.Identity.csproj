@@ -21,6 +21,12 @@
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <!-- Name of the partial YAML file exported to Functions.OpenApi/openapi/partials/ -->
     <OpenApiPartialName>identity</OpenApiPartialName>
+    <!--
+      Merge-architecture: components/responses and securitySchemes come from the shared
+      common files (responses.yaml / security.yaml) consumed by OpenApiDocumentMerger.
+      Disabling here prevents 'Conflicting component' errors at merge time.
+    -->
+    <OpenApiEmitStandardComponents>false</OpenApiEmitStandardComponents>
   </PropertyGroup>
 
   <ItemGroup>
