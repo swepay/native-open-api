@@ -95,3 +95,105 @@ public sealed class InternalDiagnosticsHandler : IRequestHandler<Commands.Intern
     }
 }
 
+// Schema Richness Wave 3 — stub handler for CreateProductCommand.
+public sealed class CreateProductHandler : IRequestHandler<Commands.CreateProductCommand, Commands.CreateProductResponse>
+{
+    [ApiResponse(201, typeof(Commands.CreateProductResponse), "application/json")]
+    [ApiResponse(422, null, "application/problem+json")]
+    public ValueTask<Commands.CreateProductResponse> Handle(Commands.CreateProductCommand request, CancellationToken cancellationToken)
+    {
+        var id = Guid.NewGuid().ToString();
+        return new ValueTask<Commands.CreateProductResponse>(
+            new Commands.CreateProductResponse(id, request.Name, request.Status));
+    }
+}
+
+// ── Polymorphism Wave 4 — payment method handlers ──────────────────────────────
+
+public sealed class GetPaymentMethodHandler
+    : IRequestHandler<Commands.GetPaymentMethodCommand, Responses.GetPaymentMethodResponse>
+{
+    [ApiResponse(200, typeof(GetPaymentMethodResponse), "application/json")]
+    [ApiResponse(404, typeof(ErrorResponse), "application/json")]
+    public ValueTask<Responses.GetPaymentMethodResponse> Handle(
+        Commands.GetPaymentMethodCommand request,
+        CancellationToken cancellationToken)
+    {
+        // Stub: return a CardPayment so the sample compiles and runs.
+        var card = new CardPayment
+        {
+            PaymentMethodType = "card",
+            Label = "Visa ending in 4242",
+            MaskedPan = "•••• •••• •••• 4242",
+            Network = "Visa",
+            ExpiryMonth = 12,
+            ExpiryYear = 2028
+        };
+        return new ValueTask<Responses.GetPaymentMethodResponse>(
+            new Responses.GetPaymentMethodResponse(card));
+    }
+}
+
+public sealed class ListPaymentMethodsHandler
+    : IRequestHandler<Commands.ListPaymentMethodsCommand, Responses.ListPaymentMethodsResponse>
+{
+    [ApiResponse(200, typeof(ListPaymentMethodsResponse), "application/json")]
+    public ValueTask<Responses.ListPaymentMethodsResponse> Handle(
+        Commands.ListPaymentMethodsCommand request,
+        CancellationToken cancellationToken)
+    {
+        var methods = new List<PaymentMethod>
+        {
+            new CardPayment
+            {
+                PaymentMethodType = "card",
+                Label = "Visa ending in 4242",
+                MaskedPan = "•••• •••• •••• 4242",
+                Network = "Visa",
+                ExpiryMonth = 12,
+                ExpiryYear = 2028
+            },
+            new BankTransfer
+            {
+                PaymentMethodType = "bank_transfer",
+                Label = "DE main account",
+                AccountNumber = "DE89370400440532013000",
+                Bic = "DEUTDEDB",
+                Currency = "EUR"
+            }
+        };
+        return new ValueTask<Responses.ListPaymentMethodsResponse>(
+            new Responses.ListPaymentMethodsResponse(methods));
+    }
+}
+
+// ── Structural Wave 5 — query/header params, response headers, links, callbacks ──
+
+public sealed class ListItemsPagedHandler
+    : IRequestHandler<Commands.ListItemsPagedCommand, Responses.ListItemsPagedResponse>
+{
+    [ApiResponse(200, typeof(ListItemsPagedResponse), "application/json")]
+    public ValueTask<Responses.ListItemsPagedResponse> Handle(
+        Commands.ListItemsPagedCommand request,
+        CancellationToken cancellationToken)
+    {
+        return new ValueTask<Responses.ListItemsPagedResponse>(
+            new Responses.ListItemsPagedResponse(new List<ItemDto>(), 0, 20, 0));
+    }
+}
+
+public sealed class CreateOrderHandler
+    : IRequestHandler<Commands.CreateOrderCommand, Responses.CreateOrderResponse>
+{
+    [ApiResponse(201, typeof(CreateOrderResponse), "application/json")]
+    [ApiResponse(400, null, "application/problem+json")]
+    [ApiResponse(422, null, "application/problem+json")]
+    public ValueTask<Responses.CreateOrderResponse> Handle(
+        Commands.CreateOrderCommand request,
+        CancellationToken cancellationToken)
+    {
+        var orderId = Guid.NewGuid().ToString();
+        return new ValueTask<Responses.CreateOrderResponse>(
+            new Responses.CreateOrderResponse(orderId, "pending", 0m));
+    }
+}

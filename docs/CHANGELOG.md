@@ -2,6 +2,95 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.0] - 2026-06-02 — OpenAPI 3.1 documentation feature expansion
+
+Large opt-in expansion of OpenAPI 3.1 documentation features rendered by **Scalar**
+(reference UI). Policy: **Scalar-first** on any Redoc/Scalar divergence (uses
+`x-scalar-*`/`x-enum-*` extensions, no dual-emit). All additions are opt-in; no
+existing API breaks. Declaration mechanism: assembly-level attributes (document
+scope) and command-type / property attributes (operation / schema scope).
+
+### Added — Native.OpenApi (attributes)
+
+- **Navigation:** `[assembly: TagMetadata(name, Description, DisplayName, ExternalDocs*)]`,
+  `[assembly: TagGroup(name, tags[])]`, `[assembly: OpenApiExternalDocs(url, Description)]`,
+  `[EndpointExternalDocs(url, Description)]` — emit root `tags` (with `description` +
+  `externalDocs`), `x-tagGroups`, `x-displayName`, and `externalDocs` (root + per-operation).
+- **Operation richness:** `[CodeSample(lang, source, Label)]` (multi-use → `x-codeSamples`),
+  `[OperationBadge(name, Position, Color)]` (multi-use → `x-badges`),
+  `[ScalarStability(Stability)]` → `x-scalar-stability` (`stable`/`experimental`/`deprecated`).
+- **Schema richness:** `[OpenApiProperty(...)]` on properties — `description`, `example`,
+  `default`, constraints (`minLength`/`maxLength`/`pattern`/`minimum`/`maximum`/`exclusive*`/
+  `multipleOf`/`minItems`/`maxItems`/`uniqueItems`), `x-order`, `x-additionalPropertiesName`.
+  Also reads **DataAnnotations** (`[Required]`, `[StringLength]`, `[MinLength]`, `[MaxLength]`,
+  `[Range]`, `[RegularExpression]`). `[OpenApiEnumMember(Description, DisplayName)]` on enum
+  fields → `x-enum-descriptions` + `x-enum-varnames`.
+- **Polymorphism:** `[OpenApiDiscriminator("prop")]` + `[OpenApiSubType(typeof(T), "value")]`
+  on a base class → `oneOf` + `discriminator` (with `mapping`); `allOf` auto-detected from
+  C# inheritance.
+- **Document:** `[assembly: OpenApiInfo(Description, Summary, TermsOfService, Contact*, License*)]`
+  → rich `info`; `[assembly: OpenApiServer(url, Description)]` (multi-use) → `servers`.
+  `[ApiExample]` extended with `RequestValue`/`ResponseValue` → inline `value:` examples
+  (alongside the existing `externalValue`).
+- **Structural (OpenAPI 3.1):** `[QueryParameter(...)]`, `[HeaderParameter(...)]` →
+  `in: query`/`in: header` parameters; `[ResponseHeader(statusCode, name, type, ...)]` →
+  response `headers`; `[assembly: Webhook(name, typeof(Payload), Method, ...)]` → top-level
+  `webhooks`; `[ResponseLink(statusCode, linkId, OperationId, Parameters, ...)]` →
+  response `links`; `[Callback(name, Expression, Method, PayloadType)]` → operation
+  `callbacks` (minimal form).
+
+### Added — NativeLambdaRouter.SourceGenerator.OpenApi
+
+- Roslyn consumers for all attributes above (command-type via `ApplyCommandAttributes`,
+  document-scope via `compilation.Assembly.GetAttributes()`), plus YAML emission for every
+  new keyword/extension. Webhook/callback payload types flow through `TypePropertyExtractor`
+  so their schemas are fully resolved in `components/schemas`.
+- Deterministic emission preserved (all collections sorted).
+
+### Added — Rendering
+
+- **`OpenApiScalarViewerOptions`** (`OpenApiRendererOptions.ScalarViewer`): `Theme`,
+  `DarkMode`, `Layout`, `HideModels`, `HideDownloadButton`, `HideSidebar`,
+  `HideTestRequestButton`, `DefaultHttpClientTargetKey`/`ClientKey`, `LocalAssetPath`
+  (air-gap). Logo wired into Scalar's native config. Back-compat overloads preserved.
+
+### Added — Samples
+
+- **`SampleApiFunction`**: new `ApiDocumentation.cs` (assembly-level info/servers/tag
+  metadata/tag groups/external docs/webhook); commands and responses exercising code
+  samples, badges, stability, schema richness, a polymorphic `PaymentMethod` hierarchy,
+  inline examples, query/header params, response headers, and links.
+
+### Changed
+
+- **Polymorphic base schemas** now emit pure `oneOf` + `discriminator`; shared base
+  properties are factored into a synthetic `{Base}__Core` schema referenced by each
+  subtype via `allOf` (strict-conformance, avoids `oneOf`+`properties` siblings that
+  trip strict validators).
+- **Enum descriptions** emit only the Scalar form (`x-enum-descriptions`/`x-enum-varnames`),
+  no Redoc `x-enumDescriptions` dual-emit (Scalar-first policy).
+- Operation `tags` are now quoted/escaped, supporting tag names with special characters.
+
+### Fixed
+
+- **`EscapeYamlString`** now escapes `\n`/`\r` — multi-line `description`/`summary`
+  (e.g. rich `info.description`) no longer produce malformed multi-line double-quoted
+  YAML scalars that strict parsers reject.
+- **`components/responses`** (`BadRequest`, `Unauthorized`, `InternalServerError`) are now
+  emitted — previously every endpoint `$ref`-ed them but the section was never produced,
+  yielding dangling references.
+- **`components/securitySchemes`** now emits the `JwtBearer` (`http`/`bearer`/`JWT`) scheme
+  referenced by authenticated operations — previously referenced but never defined.
+- **XSS hardening** in the Scalar renderer: config delivered via an HTML-escaped attribute
+  instead of a JS string literal; `HtmlEscape` now also escapes `'`.
+
+### Notes
+
+- Test suite grew from 123 to **459** tests (added YamlDotNet-based conformance/parse
+  regression tests). Generated spec validates as OpenAPI 3.1 and is deterministic.
+- AOT compliance verification was descoped for this wave (zero-reflection runtime and
+  `netstandard2.0` generator practices retained; no dedicated IL2xxx/IL3xxx pass).
+
 ## [1.7.0] - 2026-04-16 — RFC Wave 1 (UX documentation)
 
 Implements Wave 1 of `docs/RFC-DOCUMENTACAO-UX.md`. All additions are opt-in; no

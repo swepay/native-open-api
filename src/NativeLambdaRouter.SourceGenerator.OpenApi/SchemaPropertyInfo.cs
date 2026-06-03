@@ -69,4 +69,93 @@ internal sealed class SchemaPropertyInfo
     /// Description from XML doc comments or attributes.
     /// </summary>
     public string? Description { get; set; }
+
+    // ------------------------------------------------------------------
+    // Schema Richness additions (Wave 3).
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// Example value as a raw YAML scalar string (may be quoted or unquoted).
+    /// Sourced from <c>[OpenApiProperty(Example = ...)]</c>.
+    /// </summary>
+    public string? Example { get; set; }
+
+    /// <summary>
+    /// Default value as a raw YAML scalar string.
+    /// Sourced from <c>[OpenApiProperty(Default = ...)]</c>.
+    /// </summary>
+    public string? Default { get; set; }
+
+    // ── String constraints ────────────────────────────────────────────
+
+    /// <summary>Minimum string length. -1 means not set.</summary>
+    public int MinLength { get; set; } = -1;
+
+    /// <summary>Maximum string length. -1 means not set.</summary>
+    public int MaxLength { get; set; } = -1;
+
+    /// <summary>Regular-expression pattern. Null means not set.</summary>
+    public string? Pattern { get; set; }
+
+    // ── Numeric constraints ───────────────────────────────────────────
+
+    /// <summary>Inclusive minimum. NaN means not set.</summary>
+    public double Minimum { get; set; } = double.NaN;
+
+    /// <summary>Inclusive maximum. NaN means not set.</summary>
+    public double Maximum { get; set; } = double.NaN;
+
+    /// <summary>Exclusive minimum (OpenAPI 3.1 numeric form). NaN means not set.</summary>
+    public double ExclusiveMinimum { get; set; } = double.NaN;
+
+    /// <summary>Exclusive maximum (OpenAPI 3.1 numeric form). NaN means not set.</summary>
+    public double ExclusiveMaximum { get; set; } = double.NaN;
+
+    /// <summary>Multiple-of constraint. NaN means not set.</summary>
+    public double MultipleOf { get; set; } = double.NaN;
+
+    // ── Array constraints ─────────────────────────────────────────────
+
+    /// <summary>Minimum number of items. -1 means not set.</summary>
+    public int MinItems { get; set; } = -1;
+
+    /// <summary>Maximum number of items. -1 means not set.</summary>
+    public int MaxItems { get; set; } = -1;
+
+    /// <summary>Whether all items must be unique.</summary>
+    public bool UniqueItems { get; set; }
+
+    // ── Scalar extensions ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Display order for Scalar (x-order). -1 means not set.
+    /// </summary>
+    public int Order { get; set; } = -1;
+
+    /// <summary>
+    /// Human-readable name for dictionary value type (x-additionalPropertiesName).
+    /// Null means not set.
+    /// </summary>
+    public string? AdditionalPropertiesName { get; set; }
+
+    /// <summary>
+    /// Whether this is a dictionary type (additionalProperties / free-form object).
+    /// </summary>
+    public bool IsDictionary { get; set; }
+
+    // ── Enum richness ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Per-member descriptions parallel to <see cref="EnumValues"/>.
+    /// Non-null and same length as EnumValues when at least one member has a description.
+    /// Emitted as <c>x-enum-descriptions</c> (Scalar).
+    /// </summary>
+    public List<string?>? EnumDescriptions { get; set; }
+
+    /// <summary>
+    /// Per-member display names parallel to <see cref="EnumValues"/>.
+    /// Non-null and same length as EnumValues when at least one member declares a DisplayName.
+    /// Emitted as <c>x-enum-varnames</c> (Scalar).
+    /// </summary>
+    public List<string?>? EnumVarNames { get; set; }
 }

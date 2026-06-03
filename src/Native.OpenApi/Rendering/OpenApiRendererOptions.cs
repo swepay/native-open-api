@@ -40,4 +40,14 @@ public sealed record OpenApiRendererOptions
     /// deployments alongside <c>OpenApiInlineAssets=true</c>.
     /// </summary>
     public bool MermaidFromLocalAsset { get; init; }
+
+    /// <summary>
+    /// Scalar-specific viewer knobs (theme, dark mode, layout, hide-models,
+    /// default HTTP client, air-gap asset path, etc.).
+    /// When omitted the Scalar defaults apply — all spec extensions
+    /// (x-tagGroups, x-codeSamples, x-badges, x-scalar-stability,
+    /// x-displayName, oneOf/discriminator) are rendered automatically by
+    /// Scalar from the spec itself and require no config here.
+    /// </summary>
+    public OpenApiScalarViewerOptions ScalarViewer { get; init; } = new();
 }

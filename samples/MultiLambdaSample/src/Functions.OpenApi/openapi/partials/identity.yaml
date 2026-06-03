@@ -4,6 +4,13 @@ info:
   title: "Identity API"
   version: "1.0.0"
 
+tags:
+  - name: "Auth"
+  - name: "Fluent"
+  - name: "Identity"
+  - name: "Metadata"
+  - name: "OAuth2"
+
 paths:
   /v1/auth/login:
     options:
@@ -11,8 +18,8 @@ paths:
       summary: "Metadados de métodos de autenticação"
       description: "Demonstra suporte ao Map<TCommand, TResponse> com método HTTP customizado"
       tags:
-        - Identity
-        - Metadata
+        - "Identity"
+        - "Metadata"
       security: []
       responses:
         "200":
@@ -32,9 +39,9 @@ paths:
       summary: "Realiza login com senha"
       description: "Demonstra precedência de fluent metadata sobre atributos"
       tags:
-        - Identity
-        - Auth
-        - Fluent
+        - "Identity"
+        - "Auth"
+        - "Fluent"
       security: []
       requestBody:
         required: true
@@ -67,8 +74,8 @@ paths:
       summary: "Renova access token"
       description: "Demonstra metadata via atributos para request form-urlencoded"
       tags:
-        - Identity
-        - OAuth2
+        - "Identity"
+        - "OAuth2"
       security: []
       requestBody:
         required: true
@@ -105,8 +112,8 @@ paths:
       summary: "Registra um novo usuário"
       description: "Cria um novo usuário no domínio de identidade"
       tags:
-        - Identity
-        - Auth
+        - "Identity"
+        - "Auth"
       security: []
       requestBody:
         required: true
@@ -146,7 +153,7 @@ components:
         - password
     LoginOptionsCommand:
       type: object
-      description: "Request type - properties to be documented"
+      description: "Object type - properties to be documented"
     LoginOptionsResponse:
       type: object
       properties:
@@ -257,3 +264,14 @@ components:
         - code
         - recovery
         - requestId
+  responses:
+    BadRequest:
+      description: "The request was invalid or malformed."
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/SwepayProblemDetails"
+    Unauthorized:
+      description: "Authentication is required or the supplied credentials are invalid."
+    InternalServerError:
+      description: "An unexpected error occurred on the server."

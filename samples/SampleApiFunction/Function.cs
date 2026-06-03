@@ -52,12 +52,41 @@ public sealed class Function : RoutedApiGatewayFunction
             "/health",
             ctx => new HealthCheckCommand());
 
+        // Schema Richness Wave 3 — exercises [OpenApiProperty] constraints, enum descriptions,
+        // x-additionalPropertiesName, x-order.
+        routes.MapPost<CreateProductCommand, CreateProductResponse>(
+            "/v1/products",
+            ctx => JsonSerializer.Deserialize(ctx.Body!, AppJsonContext.Default.CreateProductCommand)!);
+
         // RFC § F01 — hidden via the fluent .ExcludeFromDocs() marker on the
         // route (alternative to annotating the TCommand).
         routes.MapGet<InternalDiagnosticsCommand, Responses.HealthCheckResponse>(
             "/internal/diagnostics",
             ctx => new InternalDiagnosticsCommand())
             .ExcludeFromDocs();
+
+        // Polymorphism Wave 4 — payment method endpoints.
+        // These routes exercise [OpenApiDiscriminator] + [OpenApiSubType] on PaymentMethod
+        // (abstract base) which causes the source generator to emit:
+        //   • PaymentMethod → oneOf [CardPayment, BankTransfer] + discriminator
+        //   • CardPayment   → allOf [$ref PaymentMethod, {own props}]
+        //   • BankTransfer  → allOf [$ref PaymentMethod, {own props}]
+        routes.MapGet<GetPaymentMethodCommand, GetPaymentMethodResponse>(
+            "/v1/payment-methods/{id}",
+            ctx => new GetPaymentMethodCommand(ctx.PathParameters["id"]));
+
+        routes.MapGet<ListPaymentMethodsCommand, ListPaymentMethodsResponse>(
+            "/v1/payment-methods",
+            ctx => new ListPaymentMethodsCommand());
+
+        // Structural Wave 5 — query+header params, response headers, links and callbacks.
+        routes.MapGet<ListItemsPagedCommand, ListItemsPagedResponse>(
+            "/v1/items/paged",
+            ctx => new ListItemsPagedCommand());
+
+        routes.MapPost<CreateOrderCommand, CreateOrderResponse>(
+            "/v1/orders",
+            ctx => new CreateOrderCommand());
     }
 
     protected override async Task<object> ExecuteCommandAsync(RouteMatch match, RouteContext context, IMediator mediator)
@@ -72,7 +101,12 @@ public sealed class Function : RoutedApiGatewayFunction
             UpdateItemCommand cmd => await mediator.Send(cmd),
             DeleteItemCommand cmd => await mediator.Send(cmd),
             HealthCheckCommand cmd => await mediator.Send(cmd),
+            CreateProductCommand cmd => await mediator.Send(cmd),
             InternalDiagnosticsCommand cmd => await mediator.Send(cmd),
+            GetPaymentMethodCommand cmd => await mediator.Send(cmd),
+            ListPaymentMethodsCommand cmd => await mediator.Send(cmd),
+            ListItemsPagedCommand cmd => await mediator.Send(cmd),
+            CreateOrderCommand cmd => await mediator.Send(cmd),
             _ => throw new InvalidOperationException($"Unknown command: {command.GetType().Name}")
         };
     }
@@ -87,6 +121,11 @@ public sealed class Function : RoutedApiGatewayFunction
             UpdateItemResponse r => JsonSerializer.Serialize(r, AppJsonContext.Default.UpdateItemResponse),
             DeleteItemResponse r => JsonSerializer.Serialize(r, AppJsonContext.Default.DeleteItemResponse),
             Responses.HealthCheckResponse r => JsonSerializer.Serialize(r, AppJsonContext.Default.HealthCheckResponse),
+            CreateProductResponse r => JsonSerializer.Serialize(r, AppJsonContext.Default.CreateProductResponse),
+            GetPaymentMethodResponse r => JsonSerializer.Serialize(r, AppJsonContext.Default.GetPaymentMethodResponse),
+            ListPaymentMethodsResponse r => JsonSerializer.Serialize(r, AppJsonContext.Default.ListPaymentMethodsResponse),
+            ListItemsPagedResponse r => JsonSerializer.Serialize(r, AppJsonContext.Default.ListItemsPagedResponse),
+            CreateOrderResponse r => JsonSerializer.Serialize(r, AppJsonContext.Default.CreateOrderResponse),
             NativeLambdaRouter.ErrorResponse r => JsonSerializer.Serialize(r, RouterJsonContext.Default.ErrorResponse),
             NativeLambdaRouter.HealthCheckResponse r => JsonSerializer.Serialize(r, RouterJsonContext.Default.HealthCheckResponse),
             RouteNotFoundResponse r => JsonSerializer.Serialize(r, RouterJsonContext.Default.RouteNotFoundResponse),

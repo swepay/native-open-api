@@ -23,6 +23,41 @@ internal static class GeneratorTestHelper
     }
 
     /// <summary>
+    /// Runs the OpenApiSourceGenerator on multiple source code strings (each becomes a separate
+    /// <see cref="SyntaxTree"/>). Useful when combining sources that each declare file-scoped namespaces,
+    /// which would be invalid in a single file but valid across multiple files.
+    /// </summary>
+    public static GeneratorDriverRunResult RunGenerator(
+        string[] sourceParts,
+        string assemblyName = "TestAssembly",
+        params MetadataReference[] additionalReferences)
+    {
+        return RunGenerator(sourceParts, assemblyName, globalOptions: null, additionalReferences);
+    }
+
+    /// <summary>
+    /// Runs the OpenApiSourceGenerator on multiple source code strings with custom MSBuild properties.
+    /// </summary>
+    public static GeneratorDriverRunResult RunGenerator(
+        string[] sourceParts,
+        string assemblyName,
+        Dictionary<string, string>? globalOptions,
+        params MetadataReference[] additionalReferences)
+    {
+        var syntaxTrees = sourceParts.Select(s => CSharpSyntaxTree.ParseText(s)).ToArray();
+
+        var references = BuildDefaultReferences(additionalReferences);
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            syntaxTrees,
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        return RunGeneratorOnCompilation(compilation, globalOptions);
+    }
+
+    /// <summary>
     /// Runs the OpenApiSourceGenerator on the given source code with custom MSBuild properties and returns the compilation result.
     /// </summary>
     public static GeneratorDriverRunResult RunGenerator(
@@ -32,7 +67,19 @@ internal static class GeneratorTestHelper
         params MetadataReference[] additionalReferences)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
+        var references = BuildDefaultReferences(additionalReferences);
 
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            new[] { syntaxTree },
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        return RunGeneratorOnCompilation(compilation, globalOptions);
+    }
+
+    private static List<MetadataReference> BuildDefaultReferences(IEnumerable<MetadataReference> additionalReferences)
+    {
         var references = new List<MetadataReference>
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
@@ -41,30 +88,24 @@ internal static class GeneratorTestHelper
             MetadataReference.CreateFromFile(typeof(List<>).Assembly.Location),
         };
 
-        // Add System.Runtime
         var runtimeAssembly = AppDomain.CurrentDomain.GetAssemblies()
             .FirstOrDefault(a => a.GetName().Name == "System.Runtime");
         if (runtimeAssembly != null)
-        {
             references.Add(MetadataReference.CreateFromFile(runtimeAssembly.Location));
-        }
 
-        // Add System.Collections for List<T>, Dictionary<T,V>, etc.
         var collectionsAssembly = AppDomain.CurrentDomain.GetAssemblies()
             .FirstOrDefault(a => a.GetName().Name == "System.Collections");
         if (collectionsAssembly != null)
-        {
             references.Add(MetadataReference.CreateFromFile(collectionsAssembly.Location));
-        }
 
         references.AddRange(additionalReferences);
+        return references;
+    }
 
-        var compilation = CSharpCompilation.Create(
-            assemblyName,
-            new[] { syntaxTree },
-            references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
+    private static GeneratorDriverRunResult RunGeneratorOnCompilation(
+        CSharpCompilation compilation,
+        Dictionary<string, string>? globalOptions)
+    {
         var generator = new OpenApiSourceGenerator();
 
         var optionsProvider = globalOptions != null
@@ -75,7 +116,7 @@ internal static class GeneratorTestHelper
             generators: new ISourceGenerator[] { generator.AsSourceGenerator() },
             optionsProvider: optionsProvider);
 
-        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out _, out _);
 
         return driver.GetRunResult();
     }
@@ -161,6 +202,97 @@ public sealed class AcceptsAttribute : System.Attribute
 {
     public string ContentType { get; }
     public AcceptsAttribute(string contentType) => ContentType = contentType;
+}
+";
+    }
+
+    /// <summary>
+    /// Creates Operation Richness Wave 2 attribute definitions for in-process generator tests.
+    /// Mirrors <c>CodeSampleAttribute</c>, <c>OperationBadgeAttribute</c>, and
+    /// <c>ScalarStabilityAttribute</c> (+ <c>Stability</c> enum) from <c>Native.OpenApi.Attributes</c>.
+    /// Uses block-body namespace syntax to avoid multiple file-scoped namespace declarations.
+    /// </summary>
+    public static string CreateOperationRichnessAttributeSource()
+    {
+        return @"
+namespace Native.OpenApi.Attributes
+{
+    public enum Stability { Stable = 0, Experimental = 1, Deprecated = 2 }
+
+    [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct, AllowMultiple = true, Inherited = false)]
+    public sealed class CodeSampleAttribute : System.Attribute
+    {
+        public string Lang { get; }
+        public string Source { get; }
+        public string Label { get; set; }
+        public CodeSampleAttribute(string lang, string source) { Lang = lang; Source = source; }
+    }
+
+    [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct, AllowMultiple = true, Inherited = false)]
+    public sealed class OperationBadgeAttribute : System.Attribute
+    {
+        public string Name { get; }
+        public string Position { get; set; }
+        public string Color { get; set; }
+        public OperationBadgeAttribute(string name) { Name = name; }
+    }
+
+    [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct, AllowMultiple = false, Inherited = false)]
+    public sealed class ScalarStabilityAttribute : System.Attribute
+    {
+        public Stability Stability { get; }
+        public ScalarStabilityAttribute(Stability stability) { Stability = stability; }
+    }
+}
+";
+    }
+
+    /// <summary>
+    /// Creates navigation-foundation attribute definitions for in-process generator tests.
+    /// Mirrors the real attributes in <c>Native.OpenApi.Attributes</c> but inlined in source
+    /// so the test compilation resolves them without a project reference.
+    /// Uses block-body namespace syntax to avoid multiple file-scoped namespace declarations
+    /// in a single concatenated source file.
+    /// </summary>
+    public static string CreateNavigationAttributeSource()
+    {
+        return @"
+namespace Native.OpenApi.Attributes
+{
+    [System.AttributeUsage(System.AttributeTargets.Assembly, AllowMultiple = true, Inherited = false)]
+    public sealed class TagMetadataAttribute : System.Attribute
+    {
+        public string Name { get; }
+        public string Description { get; set; }
+        public string DisplayName { get; set; }
+        public string ExternalDocsDescription { get; set; }
+        public string ExternalDocsUrl { get; set; }
+        public TagMetadataAttribute(string name) { Name = name; }
+    }
+
+    [System.AttributeUsage(System.AttributeTargets.Assembly, AllowMultiple = true, Inherited = false)]
+    public sealed class TagGroupAttribute : System.Attribute
+    {
+        public string Name { get; }
+        public string[] Tags { get; }
+        public TagGroupAttribute(string name, string[] tags) { Name = name; Tags = tags; }
+    }
+
+    [System.AttributeUsage(System.AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
+    public sealed class OpenApiExternalDocsAttribute : System.Attribute
+    {
+        public string Url { get; }
+        public string Description { get; set; }
+        public OpenApiExternalDocsAttribute(string url) { Url = url; }
+    }
+
+    [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct, AllowMultiple = false, Inherited = false)]
+    public sealed class EndpointExternalDocsAttribute : System.Attribute
+    {
+        public string Url { get; }
+        public string Description { get; set; }
+        public EndpointExternalDocsAttribute(string url) { Url = url; }
+    }
 }
 ";
     }

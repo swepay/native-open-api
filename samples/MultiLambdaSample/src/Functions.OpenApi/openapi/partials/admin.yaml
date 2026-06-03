@@ -4,6 +4,10 @@ info:
   title: "Admin API"
   version: "1.0.0"
 
+tags:
+  - name: "Admin"
+  - name: "Users"
+
 x-swepay-error-catalog:
   - code: "USER_ALREADY_EXISTS"
     httpStatus: 409
@@ -28,8 +32,8 @@ paths:
       summary: "Lista usuários administrativos"
       description: "Retorna usuários administrativos e demonstra precedência de fluent metadata sobre atributos"
       tags:
-        - Admin
-        - Users
+        - "Admin"
+        - "Users"
       security:
         - JwtBearer: []
       responses:
@@ -56,8 +60,8 @@ paths:
       x-swepay-errors:
         - "USER_ROLE_INVALID"
       tags:
-        - Admin
-        - Users
+        - "Admin"
+        - "Users"
       security:
         - JwtBearer: []
       requestBody:
@@ -95,8 +99,8 @@ paths:
       summary: "Remove usuário"
       description: "Remove um usuário administrativo pelo id"
       tags:
-        - Admin
-        - Users
+        - "Admin"
+        - "Users"
       security:
         - JwtBearer: []
       parameters:
@@ -127,8 +131,8 @@ paths:
       x-swepay-alternative: "PATCH /v1/admin/users/{id}/role"
       x-swepay-deprecation-reason: "PUT overwrote the full user; PATCH is scoped to the role field only."
       tags:
-        - Admin
-        - Users
+        - "Admin"
+        - "Users"
       security:
         - JwtBearer: []
       parameters:
@@ -164,8 +168,8 @@ paths:
       x-swepay-errors:
         - "USER_ALREADY_EXISTS"
       tags:
-        - Admin
-        - Users
+        - "Admin"
+        - "Users"
       security:
         - JwtBearer: []
       parameters:
@@ -243,7 +247,7 @@ components:
         - message
     ListUsersCommand:
       type: object
-      description: "Request type - properties to be documented"
+      description: "Object type - properties to be documented"
     ListUsersResponse:
       type: object
       properties:
@@ -286,6 +290,19 @@ components:
         - id
         - role
         - message
+    UserDto:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+      required:
+        - id
+        - email
+        - role
     SwepayProblemDetails:
       type: object
       description: "Swepay error payload (RFC 9457 superset). Carries a machine-readable code, UX-written recovery hint and request correlation id."
@@ -324,3 +341,19 @@ components:
         - code
         - recovery
         - requestId
+  responses:
+    BadRequest:
+      description: "The request was invalid or malformed."
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/SwepayProblemDetails"
+    Unauthorized:
+      description: "Authentication is required or the supplied credentials are invalid."
+    InternalServerError:
+      description: "An unexpected error occurred on the server."
+  securitySchemes:
+    JwtBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
