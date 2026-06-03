@@ -6,7 +6,7 @@
 Compile-time OpenAPI 3.1 for Native AOT .NET 10 APIs. Zero runtime reflection.
 Ships two NuGet packages + a Roslyn Source Generator.
 
-- **Current version:** `1.7.0`
+- **Current version:** `1.8.2`
 - **Target:** `net10.0` (library) / `netstandard2.0` (generator)
 - **AOT:** `PublishAot=true`, `IsTrimmable=true`, no runtime reflection
 - **OpenAPI:** 3.1-only
@@ -28,7 +28,7 @@ Ships two NuGet packages + a Roslyn Source Generator.
 
 ### What each package is for
 
-- **`NativeOpenApi`** ships: attributes (`[HideFromDocs]`, `[Deprecated]`, `[ApiExample]`, `[ErrorCatalog]`, `[ErrorDefinition]`, `[ApiResponse]`), models (`SwepayProblemDetails`), document primitives (`OpenApiDocument`, `OpenApiDocumentLoader`, `OpenApiDocumentMerger`, `OpenApiDocumentProvider`, `OpenApiLinter`), and renderer (`OpenApiHtmlRenderer` + `OpenApiRendererOptions` for branding/footer/Mermaid).
+- **`NativeOpenApi`** ships: attributes (`[HideFromDocs]`, `[Deprecated]`, `[ApiExample]`, `[ErrorCatalog]`, `[ErrorDefinition]`, `[ApiResponse]`; v1.8.0 adds `[TagMetadata]`, `[TagGroup]`, `[OpenApiExternalDocs]`, `[EndpointExternalDocs]`, `[CodeSample]`, `[OperationBadge]`, `[ScalarStability]`, `[OpenApiProperty]`, `[OpenApiEnumMember]`, `[OpenApiDiscriminator]`, `[OpenApiSubType]`, `[OpenApiInfo]`, `[OpenApiServer]`, `[QueryParameter]`, `[HeaderParameter]`, `[ResponseHeader]`, `[ResponseLink]`, `[Callback]`, `[Webhook]`), models (`SwepayProblemDetails`), document primitives (`OpenApiDocument`, `OpenApiDocumentLoader`, `OpenApiDocumentMerger`, `OpenApiDocumentProvider`, `OpenApiLinter`), and renderer (`OpenApiHtmlRenderer` + `OpenApiRendererOptions` for branding/footer/Mermaid + `OpenApiScalarViewerOptions` for Scalar-specific knobs).
 - **`NativeLambdaRouter.SourceGenerator.OpenApi`** reads `MapGet/MapPost/MapPut/MapPatch/MapDelete/Map` calls on `IRouteBuilder`, plus the attributes above, and emits a `GeneratedOpenApiSpec : IGeneratedOpenApiSpec` singleton with the full YAML at compile time.
 
 ### Decision tree
@@ -37,12 +37,23 @@ Ships two NuGet packages + a Roslyn Source Generator.
 |---|---|---|
 | Hide an endpoint from docs | Add `[HideFromDocs]` on `TCommand` **or** `.ExcludeFromDocs()` on the mapping | your `Commands.cs` / `Function.cs` |
 | Mark an endpoint deprecated | `[Deprecated(sunset, alternative, reason)]` on `TCommand` | your `Commands.cs` |
-| Add named request/response examples | `[ApiExample(name, summary) { RequestJson, ResponseStatus, ResponseJson }]` on `TCommand` (multi-use) | your `Commands.cs` + embedded JSON files |
+| Add named request/response examples | `[ApiExample(name, summary) { RequestJson, ResponseStatus, ResponseJson }]` on `TCommand` (multi-use); extend with `RequestValue`/`ResponseValue` for inline values | your `Commands.cs` |
 | Centralise error codes | Create a `static class SwepayErrors` with `[ErrorDefinition]` consts, annotate commands with `[ErrorCatalog(typeof(SwepayErrors))]` | new `SwepayErrors.cs` + your `Commands.cs` |
 | Use the canonical `problem+json` schema | Advertise a response with no typed body: `.ProducesProblem(400)` or `[ApiResponse(422, null, "application/problem+json")]` | your `Function.cs` / handler |
 | Brand the Redoc/Scalar page | Instantiate `OpenApiRendererOptions` with `Branding`, `Footer`, `EnableMermaid`; pass to `OpenApiHtmlRenderer.Render*(spec, title, options)` | the project that hosts `/docs/*` |
+| Configure the Scalar viewer (theme, dark mode, layout, hide panels) | Set `OpenApiRendererOptions.ScalarViewer` to a new `OpenApiScalarViewerOptions { Theme, DarkMode, Layout, ... }` | the project that hosts `/docs/scalar` |
 | Draw a diagram inside a description | Put a fenced ` ```mermaid ` block in the `description` text and enable `options.EnableMermaid` | the `[EndpointDescription]` or `.WithDescription(...)` |
 | Override the generated namespace | Set MSBuild property `OpenApiSpecName` in the producer `.csproj` | `*.csproj` |
+| Group tags in the sidebar | `[assembly: TagGroup("Group Name", new[] { "Tag1", "Tag2" })]` | your `ApiDocumentation.cs` |
+| Enrich a tag with description and display name | `[assembly: TagMetadata("Tag", Description = "...", DisplayName = "...")]` | your `ApiDocumentation.cs` |
+| Add code samples to an operation | `[CodeSample(lang: "curl", source: "...")]` on `TCommand` (multi-use) | your `Commands.cs` |
+| Set Scalar stability indicator | `[ScalarStability(Stability.Experimental)]` on `TCommand` | your `Commands.cs` |
+| Annotate a property with constraints | `[property: OpenApiProperty(Description = "...", MinLength = 1, MaxLength = 100)]` | your request/response types |
+| Document polymorphism | `[OpenApiDiscriminator("kind")]` + `[OpenApiSubType(typeof(T), "value")]` on the abstract base class | your domain types |
+| Declare query / header parameters | `[QueryParameter("page", typeof(int))]` / `[HeaderParameter("X-Tenant-Id", typeof(string), Required = true)]` on `TCommand` | your `Commands.cs` |
+| Document response headers | `[ResponseHeader(201, "Location", typeof(string), Required = true)]` on `TCommand` | your `Commands.cs` |
+| Declare a webhook | `[assembly: Webhook("orderCreated", typeof(OrderCreatedEvent))]` | your `ApiDocumentation.cs` |
+| Serve the spec from rich servers | `[assembly: OpenApiServer("https://api.example.com", Description = "Production")]` | your `ApiDocumentation.cs` |
 
 ### Feature matrix — v1.7.0 Wave 1 (RFC: [docs/RFC-DOCUMENTACAO-UX.md](docs/RFC-DOCUMENTACAO-UX.md))
 
@@ -58,6 +69,80 @@ Ships two NuGet packages + a Roslyn Source Generator.
 | F17 | `OpenApiRendererOptions.EnableMermaid` | — (renderer only) | Mermaid.js injected; fenced ` ```mermaid ` blocks render as SVG |
 
 > **Wave 2 / Wave 3** (audiences, stability tiers, flow, state machine, rate-limit, idempotency, etc.) are RFC-tracked but not yet emitted by the generator.
+
+### Feature matrix — v1.8.0 — OpenAPI 3.1 documentation expansion
+
+Policy: **Scalar-first** on any Scalar/Redoc divergence. Extensions prefixed `x-scalar-*` and `x-enum-*` are not dual-emitted for Redoc. All additions are opt-in; no existing API breaks.
+
+#### Navigation
+
+| Attribute | Target | Emits in YAML | Scalar rendering |
+|---|---|---|---|
+| `[assembly: TagMetadata(name)]` + optional `Description`, `DisplayName`, `ExternalDocsUrl` / `ExternalDocsDescription` | assembly | root `tags[]` with `description`, `x-displayName`, `externalDocs` | enriched sidebar tag header |
+| `[assembly: TagGroup(name, tags[])]` (multi-use) | assembly | root `x-tagGroups` | grouped sidebar sections |
+| `[assembly: OpenApiExternalDocs(url)]` + optional `Description` | assembly | root `externalDocs` | header link |
+| `[EndpointExternalDocs(url)]` + optional `Description` | class/struct | operation `externalDocs` | per-operation external link |
+
+#### Operation richness
+
+| Attribute | Target | Emits in YAML | Scalar rendering |
+|---|---|---|---|
+| `[CodeSample(lang, source)]` + optional `Label` (multi-use) | class/struct | `x-codeSamples[]` | syntax-highlighted language tabs |
+| `[OperationBadge(name)]` + optional `Position`, `Color` (multi-use) | class/struct | `x-badges[]` | coloured pills next to operation title |
+| `[ScalarStability(Stability.X)]` | class/struct | `x-scalar-stability: stable\|experimental\|deprecated` | stability badge (Scalar-first, no Redoc equivalent) |
+
+#### Schema richness
+
+| Attribute | Target | Emits in YAML |
+|---|---|---|
+| `[property: OpenApiProperty(...)]` | property | `description`, `example`, `default`, string/numeric/array constraints, `x-order`, `x-additionalPropertiesName` |
+| `[OpenApiEnumMember(Description = ..., DisplayName = ...)]` (on enum fields) | field | parallel `x-enum-descriptions` + `x-enum-varnames` arrays (Scalar-first) |
+| DataAnnotations: `[Required]`, `[StringLength]`, `[MinLength]`, `[MaxLength]`, `[Range]`, `[RegularExpression]` | property | matching OpenAPI constraints (read automatically, no extra attribute needed) |
+
+#### Polymorphism
+
+| Attribute | Target | Emits in YAML |
+|---|---|---|
+| `[OpenApiDiscriminator(propertyName)]` on abstract base class | class | `discriminator: { propertyName, mapping }` |
+| `[OpenApiSubType(typeof(T), discriminatorValue)]` (multi-use) on base class | class | `oneOf: [$ref Sub1, $ref Sub2]`; sub-types emit `allOf: [$ref Base__Core, {own props}]` |
+| C# inheritance (no attribute required) | — | `allOf` on subclass schemas |
+
+#### Document-level
+
+| Attribute | Target | Emits in YAML |
+|---|---|---|
+| `[assembly: OpenApiInfo(...)]` with `Description`, `Summary`, `TermsOfService`, `ContactName/Url/Email`, `LicenseName/LicenseUrl` | assembly | rich `info` object |
+| `[assembly: OpenApiServer(url)]` + optional `Description` (multi-use) | assembly | `servers[]` |
+| `[ApiExample]` with `RequestValue` / `ResponseValue` | class/struct | inline `value:` examples (in addition to existing `externalValue`) |
+| auto-emitted (fixed in v1.8.0) | — | `components/responses` (BadRequest, Unauthorized, InternalServerError) and `components/securitySchemes` (JwtBearer) |
+
+#### Structural (OpenAPI 3.1)
+
+| Attribute | Target | Emits in YAML |
+|---|---|---|
+| `[QueryParameter(name, parameterType?)]` + optional `Required`, `Description` (multi-use) | class/struct | `parameters: [{ in: query }]` |
+| `[HeaderParameter(name, parameterType?)]` + optional `Required`, `Description` (multi-use) | class/struct | `parameters: [{ in: header }]` |
+| `[ResponseHeader(statusCode, name, headerType?)]` + optional `Required`, `Description` (multi-use) | class/struct | `responses.{status}.headers` |
+| `[assembly: Webhook(name, typeof(Payload))]` + optional `Method`, `Summary`, `Description` (multi-use) | assembly | top-level `webhooks:` (payload schema registered in `components/schemas`) |
+| `[ResponseLink(statusCode, linkId)]` + optional `OperationId`, `Parameters`, `Description` (multi-use) | class/struct | `responses.{status}.links` |
+| `[Callback(name)]` + optional `Expression`, `Method`, `Summary`, `PayloadType` (multi-use) | class/struct | operation `callbacks` |
+
+#### Scalar viewer options — `OpenApiScalarViewerOptions`
+
+Set via `OpenApiRendererOptions.ScalarViewer = new OpenApiScalarViewerOptions { ... }`.
+
+| Property | Type | Default | Purpose |
+|---|---|---|---|
+| `Theme` | `string` | `"default"` | built-in colour theme (`"purple"`, `"blue"`, `"moon"`, `"midnight"`, etc.) |
+| `DarkMode` | `bool` | `false` | start in dark mode |
+| `Layout` | `string` | `"sidebar"` | `"sidebar"` (three-panel) or `"classic"` (single-column) |
+| `HideModels` | `bool` | `false` | hide schemas section from sidebar and content area |
+| `HideDownloadButton` | `bool` | `false` | hide the spec download button |
+| `HideSidebar` | `bool` | `false` | hide the navigation sidebar on load |
+| `HideTestRequestButton` | `bool` | `false` | collapse the "Try it out" panel |
+| `DefaultHttpClientTargetKey` | `string?` | `null` | default HTTP client language (`"Shell"`, `"Node"`, `"Python"`, `"Go"`, ...) |
+| `DefaultHttpClientClientKey` | `string?` | `null` | client library within the target (e.g. `"curl"`, `"wget"` for Shell) |
+| `LocalAssetPath` | `string?` | `null` | local JS bundle path for air-gapped deployments |
 
 ### MSBuild properties exposed to the generator
 
@@ -82,8 +167,8 @@ Declared in [src/NativeLambdaRouter.SourceGenerator.OpenApi/build/NativeLambdaRo
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="NativeOpenApi" Version="1.7.0" />
-  <PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi" Version="1.7.0"
+  <PackageReference Include="NativeOpenApi" Version="1.8.2" />
+  <PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi" Version="1.8.2"
                     OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 </ItemGroup>
 ```
@@ -177,7 +262,7 @@ int count   = GeneratedOpenApiSpec.EndpointCount;
 
 | Sample | Purpose | Demonstrates |
 |---|---|---|
-| [samples/SampleApiFunction](samples/SampleApiFunction/) | single-Lambda baseline | F01, F03, F09, F12, F13, `.ExcludeFromDocs()`, `[ApiResponse]` |
+| [samples/SampleApiFunction](samples/SampleApiFunction/) | single-Lambda baseline | F01, F03, F09, F12, F13, `.ExcludeFromDocs()`, `[ApiResponse]`; v1.8.0: `ApiDocumentation.cs` with info/servers/tag metadata/tag groups/external docs/webhooks, code samples, badges, stability, schema richness, polymorphic `PaymentMethod` hierarchy, inline examples, query/header params, response headers, links |
 | [samples/MultiLambdaSample](samples/MultiLambdaSample/) | multi-Lambda merge + branded Redoc/Scalar | everything above + F15/F16/F17 renderer wiring, multi-partial merge, `AssemblyName=bootstrap` handling |
 
 For the complete reference (humans + agents), start at [samples/MultiLambdaSample/README.md](samples/MultiLambdaSample/README.md).
@@ -190,18 +275,18 @@ For the complete reference (humans + agents), start at [samples/MultiLambdaSampl
 native-open-api/
 ├── src/
 │   ├── Native.OpenApi/                                # library (attributes, models, renderer, linter, loader)
-│   │   ├── Attributes/                                # Wave 1 attributes
+│   │   ├── Attributes/                                # Wave 1 + v1.8.0 attributes (24 files)
 │   │   ├── Extensions/OpenApiRouteExtensions.cs       # .ExcludeFromDocs() fluent marker
 │   │   ├── Models/SwepayProblemDetails.cs             # canonical problem+json payload (F13)
-│   │   ├── Rendering/                                 # OpenApiRendererOptions, branding, footer
+│   │   ├── Rendering/                                 # OpenApiRendererOptions, branding, footer, OpenApiScalarViewerOptions
 │   │   └── OpenApiHtmlRenderer.cs                     # Redoc + Scalar HTML
 │   └── NativeLambdaRouter.SourceGenerator.OpenApi/    # Roslyn generator
 │       ├── OpenApiSourceGenerator.cs                  # endpoint discovery + attribute wiring
-│       ├── OpenApiYamlGenerator.cs                    # YAML emission (F03/F09/F12/F13)
+│       ├── OpenApiYamlGenerator.cs                    # YAML emission (F03/F09/F12/F13 + v1.8.0 all features)
 │       └── build/*.props                              # CompilerVisibleProperty bindings
-├── tests/                                             # xUnit suites (90 + 98 tests)
+├── tests/                                             # xUnit suites (459 tests as of v1.8.0)
 ├── samples/
-│   ├── SampleApiFunction/
+│   ├── SampleApiFunction/                             # v1.8.0: ApiDocumentation.cs + full v1.8.0 coverage
 │   └── MultiLambdaSample/
 └── docs/
     ├── CHANGELOG.md
