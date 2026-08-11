@@ -3,6 +3,7 @@ name: renderer-ux
 description: Evolui a camada de renderização HTML (OpenApiHtmlRenderer, OpenApiRendererOptions) para Redoc e Scalar — config de tagGroups, theming, logo, footer, code samples, modo air-gap vs CDN. Use ao melhorar como o spec é exibido nas UIs, não ao gerar o spec em si.
 tools: Read, Edit, Write, Grep, Glob, Bash
 model: sonnet
+archetype: specialized
 ---
 
 # Renderer UX — native-open-api

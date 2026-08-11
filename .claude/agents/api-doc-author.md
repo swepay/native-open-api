@@ -3,6 +3,7 @@ name: api-doc-author
 description: Escreve as anotações, exemplos e specs de demonstração nos samples/ e valida a documentação end-to-end nas duas UIs (Redoc e Scalar). Use para exercitar recursos novos com conteúdo realista e confirmar que aparecem bem renderizados.
 tools: Read, Edit, Write, Grep, Glob, Bash
 model: sonnet
+archetype: specialized
 ---
 
 # API Doc Author — native-open-api

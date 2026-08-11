@@ -3,6 +3,7 @@ name: aot-compliance-guard
 description: Garante que toda mudança mantém PublishAot=true sem trim/reflection/AOT warnings, e que o source generator permanece netstandard2.0. Use após qualquer alteração de código de produção, antes de finalizar, para validar compilação AOT e ausência de reflection.
 tools: Read, Grep, Glob, Bash
 model: sonnet
+archetype: specialized
 ---
 
 # AOT Compliance Guard — native-open-api

@@ -3,6 +3,7 @@ name: source-generator-dev
 description: Implementa novos campos/extensões OpenAPI no source generator Roslyn (OpenApiYamlGenerator, TypePropertyExtractor, EndpointInfo) e nos atributos/fluent API. Use ao adicionar emissão de tags, x-tagGroups, x-codeSamples, x-badges, externalDocs, constraints de schema, exemplos inline, etc. Mantém zero reflection e netstandard2.0.
 tools: Read, Edit, Write, Grep, Glob, Bash
 model: sonnet
+archetype: specialized
 ---
 
 # Source Generator Developer — native-open-api

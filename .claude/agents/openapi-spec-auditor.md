@@ -3,6 +3,7 @@ name: openapi-spec-auditor
 description: Audita o YAML OpenAPI 3.1 gerado pela biblioteca contra a especificação e contra a matriz de compatibilidade Redoc/Scalar. Use proativamente ao avaliar lacunas de documentação, validar conformidade do spec ou decidir quais recursos implementar. Não escreve código de produção — produz relatórios e recomendações.
 tools: Read, Grep, Glob, WebFetch, WebSearch, Bash
 model: sonnet
+archetype: specialized
 ---
 
 # OpenAPI Spec Auditor — native-open-api
