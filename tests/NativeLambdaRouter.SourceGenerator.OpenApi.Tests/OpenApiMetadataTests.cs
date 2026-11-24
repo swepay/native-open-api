@@ -724,6 +724,213 @@ public class MyRouter
         generatedSource.Should().Contain("$ref: \"\"#/components/schemas/CreateItemCommand\"\"");
     }
 
+    // ── Accepts<TBody> (declared request body type, swepay/native-guard-backend#97) ──
+
+    [Fact]
+    public void Generator_AcceptsGeneric_UsesBodyTypeSchema_InsteadOfCommand()
+    {
+        // Arrange — EnsureExternalIdpUserCommand mixes path/header/claim-derived fields with
+        // the few fields that actually come from the JSON body (AdminEnsureExternalIdpUserRequest).
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public sealed record EnsureExternalIdpUserCommand(
+    string RealmId,
+    string AssertionToken,
+    string CallerClientId,
+    string CallerIpAddress,
+    string ExternalIdpSource);
+
+public sealed record AdminEnsureExternalIdpUserRequest(string ExternalIdpSource);
+
+public sealed record EnsureExternalIdpUserResponse(string UserId);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<EnsureExternalIdpUserCommand, EnsureExternalIdpUserResponse>(
+            ""/admin/v1/realms/{realmId}/external-idp-users/ensure"",
+            ctx => new EnsureExternalIdpUserCommand("""", """", """", """", """"))
+            .Accepts<AdminEnsureExternalIdpUserRequest>();
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — requestBody references the declared body type, not the command
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("$ref: \"\"#/components/schemas/AdminEnsureExternalIdpUserRequest\"\"");
+        generatedSource.Should().NotContain("$ref: \"\"#/components/schemas/EnsureExternalIdpUserCommand\"\"");
+    }
+
+    [Fact]
+    public void Generator_AcceptsGeneric_RegistersBodyTypeInComponentsSchemas_WithItsOwnProperties()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public sealed record EnsureExternalIdpUserCommand(
+    string RealmId,
+    string AssertionToken,
+    string ExternalIdpSource);
+
+public sealed record AdminEnsureExternalIdpUserRequest(string ExternalIdpSource, string? DisplayName);
+
+public sealed record EnsureExternalIdpUserResponse(string UserId);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<EnsureExternalIdpUserCommand, EnsureExternalIdpUserResponse>(
+            ""/admin/v1/realms/{realmId}/external-idp-users/ensure"",
+            ctx => new EnsureExternalIdpUserCommand("""", """", """"))
+            .Accepts<AdminEnsureExternalIdpUserRequest>();
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — AdminEnsureExternalIdpUserRequest is registered in components/schemas with
+        // its own properties (not an empty/unresolved stub).
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("AdminEnsureExternalIdpUserRequest:");
+        generatedSource.Should().Contain("externalIdpSource:");
+        generatedSource.Should().Contain("displayName:");
+    }
+
+    [Fact]
+    public void Generator_AcceptsGeneric_ServerDerivedCommandFieldsNeverAppearInRequestBody()
+    {
+        // Arrange — realmId/assertionToken/callerClientId/callerIpAddress are populated from
+        // path/header/claims; they must not leak into the requestBody as (wrongly) required.
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public sealed record EnsureExternalIdpUserCommand(
+    string RealmId,
+    string AssertionToken,
+    string CallerClientId,
+    string CallerIpAddress,
+    string ExternalIdpSource);
+
+public sealed record AdminEnsureExternalIdpUserRequest(string ExternalIdpSource);
+
+public sealed record EnsureExternalIdpUserResponse(string UserId);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        // No {realmId} path segment here on purpose: this test isolates requestBody/schema
+        // leakage from path-parameter extraction, which is a separate, already-correct concern.
+        routes.MapPost<EnsureExternalIdpUserCommand, EnsureExternalIdpUserResponse>(
+            ""/admin/v1/external-idp-users/ensure"",
+            ctx => new EnsureExternalIdpUserCommand("""", """", """", """", """"))
+            .Accepts<AdminEnsureExternalIdpUserRequest>();
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — none of the command's server-derived fields leak anywhere in the spec, and
+        // the command schema itself is not registered (Accepts<TBody>() replaces it entirely).
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().NotContain("realmId");
+        generatedSource.Should().NotContain("assertionToken");
+        generatedSource.Should().NotContain("callerClientId");
+        generatedSource.Should().NotContain("callerIpAddress");
+        generatedSource.Should().NotContain("EnsureExternalIdpUserCommand:");
+    }
+
+    [Fact]
+    public void Generator_WithoutAcceptsGeneric_RequestBodySchemaStaysOnCommand_Unchanged()
+    {
+        // Arrange — regression guard: a route that never calls .Accepts<TBody>() keeps
+        // documenting the command type as the request body, exactly as before this feature.
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public sealed record CreateItemCommand(string Name, string Description);
+public sealed record CreateItemResponse(string Id);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<CreateItemCommand, CreateItemResponse>(
+            ""/v1/items"", ctx => new CreateItemCommand("""", """"));
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("$ref: \"\"#/components/schemas/CreateItemCommand\"\"");
+    }
+
+    [Fact]
+    public void Generator_AcceptsGenericWithFormUrlEncodedContentType_UsesBodyTypeFields()
+    {
+        // Arrange — Accepts<TBody>() and the content-type Accepts(string) overload are
+        // independent and chainable together.
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public sealed record TokenCommand(string RealmId, string ClientId, string GrantType);
+public sealed record TokenBody(string ClientId, string GrantType);
+public sealed record TokenResponse(string AccessToken);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        // No {realmId} path segment on purpose -- see the sibling test above for why.
+        routes.MapPost<TokenCommand, TokenResponse>(
+            ""/v1/token"", ctx => new TokenCommand("""", """", """"))
+            .Accepts<TokenBody>()
+            .Accepts(""application/x-www-form-urlencoded"");
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — form fields come from TokenBody (no realmId), not from TokenCommand
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("application/x-www-form-urlencoded");
+        generatedSource.Should().Contain("clientId");
+        generatedSource.Should().Contain("grantType");
+        generatedSource.Should().NotContain("realmId");
+    }
+
     // ── Accepts (attribute-based) ───────────────────────────────────
 
     [Fact]

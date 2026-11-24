@@ -145,6 +145,7 @@ public interface IRouteEndpointBuilder
     IRouteEndpointBuilder AllowAnonymous();
     IRouteEndpointBuilder Produces(params string[] tags);
     IRouteEndpointBuilder Accepts(string contentType);
+    IRouteEndpointBuilder Accepts<TBody>();
     IRouteEndpointBuilder WithHeader(string name, string value);
     IRouteEndpointBuilder RequireRole(params string[] roles);
 }
