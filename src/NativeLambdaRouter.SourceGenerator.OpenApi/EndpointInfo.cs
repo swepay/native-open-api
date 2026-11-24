@@ -82,6 +82,33 @@ internal sealed class EndpointInfo
     public List<ProducesInfo> AdditionalProduces { get; set; } = new();
 
     /// <summary>
+    /// Fully-qualified type name of the actual request body type, declared via
+    /// <c>.Accepts&lt;TBody&gt;()</c> (<c>NativeLambdaRouter</c> &gt;= 2.5.0,
+    /// <c>RouteDefinition.RequestBodyType</c>). <c>null</c> when the route never called
+    /// <c>.Accepts&lt;TBody&gt;()</c>, in which case the command type doubles as the body
+    /// type (historical default — see swepay/native-guard-backend#97).
+    /// </summary>
+    public string? RequestBodyTypeName { get; set; }
+
+    /// <summary>
+    /// Simple name (without namespace) of <see cref="RequestBodyTypeName"/>. <c>null</c> when
+    /// <see cref="RequestBodyTypeName"/> is <c>null</c>.
+    /// </summary>
+    public string? RequestBodySimpleName { get; set; }
+
+    /// <summary>
+    /// The resolved properties for the declared request body type (see
+    /// <see cref="RequestBodyTypeName"/>). Empty when no <c>.Accepts&lt;TBody&gt;()</c> was
+    /// declared — <see cref="CommandProperties"/> is used for the request schema instead.
+    /// </summary>
+    public List<SchemaPropertyInfo> RequestBodyProperties { get; set; } = new();
+
+    /// <summary>
+    /// Whether <see cref="RequestBodyProperties"/> were resolved from the semantic model.
+    /// </summary>
+    public bool RequestBodyPropertiesResolved { get; set; }
+
+    /// <summary>
     /// The resolved properties for the Command type.
     /// </summary>
     public List<SchemaPropertyInfo> CommandProperties { get; set; } = new();

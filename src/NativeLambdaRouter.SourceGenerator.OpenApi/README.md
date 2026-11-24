@@ -6,7 +6,7 @@
 Roslyn Source Generator that emits OpenAPI 3.1 YAML at compile time from
 `NativeLambdaRouter` endpoint maps — zero runtime overhead, zero reflection.
 
-- **Version:** `1.8.3`
+- **Version:** `1.9.0`
 - **Target:** `netstandard2.0` (analyzer), consumed by `net10.0` projects
 - **Generated artifact:** `{OpenApiSpecName ?? AssemblyName}.Generated.GeneratedOpenApiSpec`
 - **Interface:** implements `Native.OpenApi.IGeneratedOpenApiSpec` when that package is referenced
@@ -22,7 +22,7 @@ The generator walks the syntax + semantic model of each compilation looking for:
 | Surface | Where |
 |---|---|
 | Route maps | `routes.MapGet<TCommand, TResponse>(...)`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete`, `Map("METHOD", ...)` |
-| Fluent chain | `.WithName`, `.WithSummary`, `.WithDescription`, `.WithTags`, `.Accepts`, `.Produces(contentType)`, `.ProducesProblem(statusCode)`, `.AllowAnonymous`, **`.ExcludeFromDocs`** |
+| Fluent chain | `.WithName`, `.WithSummary`, `.WithDescription`, `.WithTags`, `.Accepts(contentType)`, **`.Accepts<TBody>()`** (v1.9.0, requires `NativeLambdaRouter` >= 2.5.0), `.Produces(contentType)`, `.ProducesProblem(statusCode)`, `.AllowAnonymous`, **`.ExcludeFromDocs`** |
 | Command attributes (on TCommand class/struct) | `[EndpointName]`, `[EndpointSummary]`, `[EndpointDescription]`, `[Tags]`, `[Accepts]`, `[HideFromDocs]`, `[Deprecated]`, `[ApiExample]`, `[ErrorCatalog]`; v1.8.0 adds `[EndpointExternalDocs]`, `[CodeSample]`, `[OperationBadge]`, `[ScalarStability]`, `[QueryParameter]`, `[HeaderParameter]`, `[ResponseHeader]`, `[ResponseLink]`, `[Callback]`, `[OpenApiDiscriminator]`, `[OpenApiSubType]` |
 | Assembly attributes | v1.8.0: `[assembly: TagMetadata]`, `[assembly: TagGroup]`, `[assembly: OpenApiExternalDocs]`, `[assembly: OpenApiInfo]`, `[assembly: OpenApiServer]`, `[assembly: Webhook]` |
 | Property attributes | v1.8.0: `[property: OpenApiProperty]` on TCommand/TResponse properties; `[OpenApiEnumMember]` on enum fields |
@@ -166,6 +166,7 @@ routes.MapGet<GetClientsCommand, GetClientsResponse>("/v1/clients", ctx => new G
 | `.WithDescription("text")` | `description: text` (Markdown allowed; fenced ` ```mermaid ` blocks render when the host enables F17) |
 | `.WithTags("A", "B")` | overrides auto-generated tags |
 | `.Accepts("contentType")` | sets request body content type (default `application/json`) |
+| `.Accepts<TBody>()` | **v1.9.0** — declares the real request body type; `requestBody` documents `TBody`, not the command (requires `NativeLambdaRouter` >= 2.5.0) |
 | `.ProducesProblem(statusCode)` | adds an `application/problem+json` response — points at `SwepayProblemDetails` (F13) |
 | `.AllowAnonymous()` | emits `security: []` (OpenAPI 3.1 convention) |
 | `.ExcludeFromDocs()` | **F01** — omits this operation from the generated spec |
@@ -217,6 +218,45 @@ The generator discovers `IRequestHandler<TCommand, TResponse>` via the semantic 
 
 ---
 
+## Declared request body type (`.Accepts<TBody>()`, v1.9.0+)
+
+```csharp
+public sealed record EnsureExternalIdpUserCommand(
+    string RealmId,           // from path
+    string AssertionToken,    // from header
+    string CallerClientId,    // from claim
+    string ExternalIdpSource, // from body
+    string? DisplayName);     // from body
+
+public sealed record AdminEnsureExternalIdpUserRequest(string ExternalIdpSource, string? DisplayName);
+
+routes.MapPost<EnsureExternalIdpUserCommand, EnsureExternalIdpUserResponse>(
+        "/admin/v1/realms/{realmId}/external-idp-users/ensure",
+        ctx =>
+        {
+            var body = JsonSerializer.Deserialize(
+                ctx.Body!, AppJsonContext.Default.AdminEnsureExternalIdpUserRequest)!;
+            return new EnsureExternalIdpUserCommand(
+                ctx.PathParameters["realmId"], ctx.Headers["X-Assertion-Token"],
+                ctx.Claims["client_id"], body.ExternalIdpSource, body.DisplayName);
+        })
+    .Accepts<AdminEnsureExternalIdpUserRequest>();
+```
+
+Commands built from a mix of path parameters, headers, claims, and the body are common on
+admin/auth routes (closes [swepay/native-guard-backend#97](https://github.com/swepay/native-guard-backend/issues/97)). Without `.Accepts<TBody>()`, the generator has no way to tell
+the body is narrower than the command, and emits `requestBody` from the command's full
+schema — including `realmId`/`assertionToken`/`callerClientId` as **required** body fields,
+even though the server only ever reads them from the path/header/claim. `.Accepts<TBody>()`
+tells the generator to emit `requestBody` from `AdminEnsureExternalIdpUserRequest`'s schema
+instead (registered in `components/schemas` with its own properties), and the command's
+schema is not registered under its own name at all.
+
+Routes that never call `.Accepts<TBody>()` are unaffected — `requestBody` still documents the
+command type, exactly as in 1.8.3 and earlier.
+
+---
+
 ## Form-encoded bodies (v1.5.1+)
 
 ```csharp
@@ -231,7 +271,7 @@ routes.MapPost<RefreshTokenCommand, TokenResponse>("/v1/realms/{realm}/protocol/
     .Accepts("application/x-www-form-urlencoded");
 ```
 
-The generator emits an inline schema (all fields `type: string`, nullables excluded from `required`) instead of a `$ref` — matches the OAuth2 token endpoint convention.
+The generator emits an inline schema (all fields `type: string`, nullables excluded from `required`) instead of a `$ref` — matches the OAuth2 token endpoint convention. Chain `.Accepts<TBody>()` together with `.Accepts("application/x-www-form-urlencoded")` when the form fields come from a declared body type rather than the command: `.Accepts<TBody>().Accepts("application/x-www-form-urlencoded")`.
 
 ---
 

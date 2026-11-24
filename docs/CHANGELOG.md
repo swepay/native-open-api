@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.0] - 2026-11-24 — `requestBody` honors the real body type
+
+### Added
+
+- **`.Accepts<TBody>()` support** — closes [swepay/native-guard-backend#97](https://github.com/swepay/native-guard-backend/issues/97) (Option A). When a route calls `NativeLambdaRouter`'s (≥ 2.5.0) new `IRouteEndpointBuilder.Accepts<TBody>()`, the generator now emits `requestBody` from `TBody`'s schema — registered in `components/schemas` with its own resolved properties — instead of the route's command type. Several admin routes build their command from a mix of path parameters, headers, and claims, with only a few properties coming from the JSON body (e.g. `EnsureExternalIdpUserCommand` carries `realmId`/`assertionToken`/`callerClientId`/`callerIpAddress`, all server-derived, plus the couple of fields the body DTO actually has). Before this release, the generator always used the command's full schema for `requestBody` and marked those server-derived fields `required`, so SDKs generated from the spec told callers to send caller-identity values in the body that the server never reads from there.
+- The `application/x-www-form-urlencoded` inline-schema path (`.Accepts(string contentType)`) also honors `.Accepts<TBody>()` when both are declared on the same route — form fields come from `TBody`, not the command.
+
+### Non-Breaking
+
+- Routes that never call `.Accepts<TBody>()` are unaffected: `requestBody` keeps referencing the command type's schema, byte-for-byte unchanged from 1.8.3.
+- No new `PackageReference`; the generator still resolves `.Accepts<TBody>()` purely through Roslyn syntax/semantic analysis of the consuming project, with no project reference onto `NativeLambdaRouter`.
+
 ## [1.8.3] - 2026-06-03 — Renderer & generator fixes, docs
 
 ### Fixed

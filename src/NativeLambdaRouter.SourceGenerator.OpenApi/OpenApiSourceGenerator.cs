@@ -197,7 +197,7 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         ExtractTypeProperties(commandType, responseType, endpoint);
 
         // Detect fluent chain options (.AllowAnonymous(), .ProducesProblem(...), .WithName(), etc.)
-        ApplyFluentChainOptions(invocation, endpoint);
+        ApplyFluentChainOptions(invocation, endpoint, semanticModel);
 
         // Read metadata attributes from TCommand type ([EndpointName], [Tags], etc.)
         ApplyCommandAttributes(commandType, endpoint);
@@ -252,7 +252,10 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
     /// such as .AllowAnonymous(), .WithName(), .WithDescription(),
     /// .WithSummary(), .WithTags(), and .ProducesProblem(statusCode).
     /// </summary>
-    private static void ApplyFluentChainOptions(InvocationExpressionSyntax mapInvocation, EndpointInfo endpoint)
+    private static void ApplyFluentChainOptions(
+        InvocationExpressionSyntax mapInvocation,
+        EndpointInfo endpoint,
+        SemanticModel semanticModel)
     {
         // In the Roslyn AST, a fluent chain like:
         //   routes.MapGet<Cmd, Rsp>("/path", ctx => new Cmd()).AllowAnonymous().ProducesProblem(500)
@@ -307,7 +310,20 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
                     break;
 
                 case "Accepts":
-                    endpoint.AcceptsContentType = ExtractFirstStringArgument(parentInvocation);
+                    // Two distinct, independently-chainable overloads share this name:
+                    //   .Accepts(string contentType)   -- sets the request Content-Type.
+                    //   .Accepts<TBody>()               -- declares the real body type
+                    //                                      (NativeLambdaRouter >= 2.5.0,
+                    //                                      swepay/native-guard-backend#97).
+                    // A GenericNameSyntax with exactly one type argument is the latter.
+                    if (parentMemberAccess.Name is GenericNameSyntax { TypeArgumentList.Arguments.Count: 1 } acceptsGeneric)
+                    {
+                        ApplyAcceptsBodyType(acceptsGeneric, semanticModel, endpoint);
+                    }
+                    else
+                    {
+                        endpoint.AcceptsContentType = ExtractFirstStringArgument(parentInvocation);
+                    }
                     break;
 
                 // RFC-DOCUMENTACAO-UX § F01: per-mapping exclusion marker.
@@ -358,6 +374,51 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         {
             endpoint.ProducesContentType = contentType;
         }
+    }
+
+    /// <summary>
+    /// Resolves the <c>TBody</c> type argument of <c>.Accepts&lt;TBody&gt;()</c> and records
+    /// it on the endpoint: the request body schema is emitted from <c>TBody</c> instead of
+    /// the route's command type (swepay/native-guard-backend#97, Option A). Also runs the
+    /// same property/schema discovery already used for the command and response types, so
+    /// <c>TBody</c> is fully documented in <c>components/schemas</c> rather than an empty stub.
+    /// </summary>
+    private static void ApplyAcceptsBodyType(
+        GenericNameSyntax acceptsGeneric,
+        SemanticModel semanticModel,
+        EndpointInfo endpoint)
+    {
+        var bodyTypeSyntax = acceptsGeneric.TypeArgumentList.Arguments[0];
+        var bodyType = semanticModel.GetTypeInfo(bodyTypeSyntax).Type;
+        if (bodyType == null)
+            return;
+
+        endpoint.RequestBodyTypeName = bodyType.ToDisplayString();
+        endpoint.RequestBodySimpleName = bodyType.Name;
+
+        var bodyProps = TypePropertyExtractor.Extract(bodyType);
+        if (bodyProps.Count > 0)
+        {
+            endpoint.RequestBodyProperties = bodyProps;
+            endpoint.RequestBodyPropertiesResolved = true;
+        }
+
+        foreach (var schema in TypePropertyExtractor.DiscoverSchemas(bodyType))
+        {
+            endpoint.ReferencedSchemas.Add(schema);
+        }
+
+        // ExtractTypeProperties (run earlier, for the command/response pair) already called
+        // DiscoverSchemas(commandType), which always includes the command's own schema as its
+        // root element -- that is how command/response schemas normally reach
+        // components/schemas without a dedicated .Accepts<TBody>() path. Once TBody replaces
+        // the command as the documented request body, that root entry must not survive: it
+        // would re-introduce the exact symptom this feature fixes (the command's server-derived
+        // fields registered in components/schemas, readable even though nothing refs them as
+        // the requestBody anymore). Transitively-discovered nested types the command alone
+        // pulled in are left as-is -- orphaned extra schema entries, not a correctness issue.
+        endpoint.ReferencedSchemas.RemoveAll(schema =>
+            string.Equals(schema.TypeName, endpoint.CommandSimpleName, System.StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -1606,7 +1667,7 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         }
 
         // Detect fluent chain options (.AllowAnonymous(), .ProducesProblem(), .WithName(), etc.)
-        ApplyFluentChainOptions(invocation, endpoint);
+        ApplyFluentChainOptions(invocation, endpoint, semanticModel);
 
         // Read metadata attributes from TCommand type ([EndpointName], [Tags], etc.)
         if (commandTypeInfo.Type != null)

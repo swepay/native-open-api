@@ -335,7 +335,13 @@ internal static class OpenApiYamlGenerator
                     }
                     else
                     {
-                        sb.AppendLine($"              $ref: \"#/components/schemas/{endpoint.CommandSimpleName}\"");
+                        // .Accepts<TBody>() (swepay/native-guard-backend#97, Option A): the
+                        // route's command is built from path/header/claims plus the body, so
+                        // the body alone — not the command — is what the schema must describe.
+                        // Falls back to the command type, unchanged, when Accepts<TBody>() was
+                        // never declared on this route.
+                        var requestSchemaName = endpoint.RequestBodySimpleName ?? endpoint.CommandSimpleName;
+                        sb.AppendLine($"              $ref: \"#/components/schemas/{requestSchemaName}\"");
                     }
 
                     // RFC § F09 — request-side named examples (externalValue reference,
@@ -746,9 +752,7 @@ internal static class OpenApiYamlGenerator
         // 2. Register the canonical command/response schemas (may already exist from step 1).
         foreach (var endpoint in endpoints)
         {
-            // Command schema — only if not already registered with richer data
-            MergeSchema(schemaMap, endpoint.CommandSimpleName, "Request",
-                endpoint.CommandProperties, endpoint.CommandPropertiesResolved);
+            RegisterRequestSchema(schemaMap, endpoint);
 
             // Response schema
             MergeSchema(schemaMap, endpoint.ResponseSimpleName, "Response",
@@ -756,6 +760,28 @@ internal static class OpenApiYamlGenerator
         }
 
         return schemaMap.Values.OrderBy(s => s.TypeName, StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>
+    /// Registers the schema used for the operation's <c>requestBody</c>: the declared
+    /// <c>.Accepts&lt;TBody&gt;()</c> type when the route has one (swepay/native-guard-backend#97,
+    /// Option A), otherwise the command type — unchanged historical behavior. Only one of the
+    /// two is ever registered in <c>components/schemas</c>; when <c>TBody</c> is declared, the
+    /// command type is not a stand-in for the request body and is not registered under this
+    /// name (it may still appear separately if referenced elsewhere, e.g. as a response).
+    /// </summary>
+    private static void RegisterRequestSchema(Dictionary<string, SchemaTypeInfo> schemaMap, EndpointInfo endpoint)
+    {
+        if (endpoint.RequestBodyTypeName != null)
+        {
+            MergeSchema(schemaMap, endpoint.RequestBodySimpleName!, "Request",
+                endpoint.RequestBodyProperties, endpoint.RequestBodyPropertiesResolved);
+        }
+        else
+        {
+            MergeSchema(schemaMap, endpoint.CommandSimpleName, "Request",
+                endpoint.CommandProperties, endpoint.CommandPropertiesResolved);
+        }
     }
 
     /// <summary>
@@ -778,8 +804,7 @@ internal static class OpenApiYamlGenerator
         // Step 2: register command/response schemas.
         foreach (var endpoint in endpoints)
         {
-            MergeSchema(schemaMap, endpoint.CommandSimpleName, "Request",
-                endpoint.CommandProperties, endpoint.CommandPropertiesResolved);
+            RegisterRequestSchema(schemaMap, endpoint);
             MergeSchema(schemaMap, endpoint.ResponseSimpleName, "Response",
                 endpoint.ResponseProperties, endpoint.ResponsePropertiesResolved);
         }
@@ -1582,24 +1607,33 @@ internal static class OpenApiYamlGenerator
 
     /// <summary>
     /// Appends an inline object schema for application/x-www-form-urlencoded request bodies.
-    /// When properties are resolved from the Command type, emits each property as a form field.
-    /// Properties from form-encoded bodies are always typed as <c>string</c> since HTTP forms
-    /// transmit everything as text. Nullable properties are excluded from <c>required</c>.
+    /// Uses the declared <c>.Accepts&lt;TBody&gt;()</c> type's properties when the route has
+    /// one (swepay/native-guard-backend#97, Option A); otherwise falls back to the Command
+    /// type's properties, unchanged historical behavior. Properties from form-encoded bodies
+    /// are always typed as <c>string</c> since HTTP forms transmit everything as text.
+    /// Nullable properties are excluded from <c>required</c>.
     /// </summary>
     private static void AppendFormEncodedSchema(StringBuilder sb, EndpointInfo endpoint)
     {
         sb.AppendLine("              type: object");
 
-        if (endpoint.CommandPropertiesResolved && endpoint.CommandProperties.Count > 0)
+        var formFieldsResolved = endpoint.RequestBodyTypeName != null
+            ? endpoint.RequestBodyPropertiesResolved
+            : endpoint.CommandPropertiesResolved;
+        var formFields = endpoint.RequestBodyTypeName != null
+            ? endpoint.RequestBodyProperties
+            : endpoint.CommandProperties;
+
+        if (formFieldsResolved && formFields.Count > 0)
         {
             sb.AppendLine("              properties:");
-            foreach (var prop in endpoint.CommandProperties)
+            foreach (var prop in formFields)
             {
                 sb.AppendLine($"                {prop.JsonName}:");
                 sb.AppendLine("                  type: string");
             }
 
-            var requiredProps = endpoint.CommandProperties.Where(p => p.IsRequired).ToList();
+            var requiredProps = formFields.Where(p => p.IsRequired).ToList();
             if (requiredProps.Count > 0)
             {
                 sb.AppendLine("              required:");
@@ -1611,7 +1645,8 @@ internal static class OpenApiYamlGenerator
         }
         else
         {
-            sb.AppendLine($"              description: \"{endpoint.CommandSimpleName} form fields\"");
+            var formTypeName = endpoint.RequestBodySimpleName ?? endpoint.CommandSimpleName;
+            sb.AppendLine($"              description: \"{formTypeName} form fields\"");
         }
     }
 

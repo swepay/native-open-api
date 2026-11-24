@@ -6,7 +6,7 @@
 Compile-time OpenAPI 3.1 for Native AOT .NET 10 APIs. Zero runtime reflection.
 Ships two NuGet packages + a Roslyn Source Generator.
 
-- **Current version:** `1.8.3`
+- **Current version:** `1.9.0`
 - **Target:** `net10.0` (library) / `netstandard2.0` (generator)
 - **AOT:** `PublishAot=true`, `IsTrimmable=true`, no runtime reflection
 - **OpenAPI:** 3.1-only
@@ -167,8 +167,8 @@ Declared in [src/NativeLambdaRouter.SourceGenerator.OpenApi/build/NativeLambdaRo
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="NativeOpenApi" Version="1.8.3" />
-  <PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi" Version="1.8.3"
+  <PackageReference Include="NativeOpenApi" Version="1.9.0" />
+  <PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi" Version="1.9.0"
                     OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 </ItemGroup>
 ```
