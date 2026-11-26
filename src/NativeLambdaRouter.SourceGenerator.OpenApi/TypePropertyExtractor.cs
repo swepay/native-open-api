@@ -326,6 +326,16 @@ internal static class TypePropertyExtractor
 
         MapType(propType, info);
 
+        // [JsonPropertyName] (System.Text.Json.Serialization) overrides the camelCase default
+        // (swepay/native-open-api#58). Matched by simple attribute name only (no namespace/
+        // assembly check), consistent with how every other attribute reader in this file and
+        // in OpenApiSourceGenerator resolves attributes — it also works for form-urlencoded
+        // bodies such as OAuth2 `grant_type`, which AppendFormEncodedSchema renders straight
+        // from JsonName. Applied on records too: the compiler copies a primary-constructor
+        // parameter's `[property: JsonPropertyName(...)]` attribute onto the synthesized
+        // property, which is exactly what `property.GetAttributes()` reads below.
+        ApplyJsonPropertyNameAttribute(property, info);
+
         // Apply [OpenApiProperty] attribute (our own, from Native.OpenApi.Attributes).
         ApplyOpenApiPropertyAttribute(property, info);
 
@@ -333,6 +343,32 @@ internal static class TypePropertyExtractor
         ApplyDataAnnotationsAttributes(property, info);
 
         return info;
+    }
+
+    // ── [JsonPropertyName] reader ──────────────────────────────────────
+
+    /// <summary>
+    /// Reads <c>[JsonPropertyName("...")]</c> and, when present, overrides
+    /// <see cref="SchemaPropertyInfo.JsonName"/> (set to the camelCase default just before this
+    /// call runs). An empty string argument is ignored — it is not a valid wire name and almost
+    /// certainly a mistake the schema should not silently encode.
+    /// </summary>
+    private static void ApplyJsonPropertyNameAttribute(IPropertySymbol property, SchemaPropertyInfo info)
+    {
+        foreach (var attr in property.GetAttributes())
+        {
+            if (attr.AttributeClass?.Name != "JsonPropertyNameAttribute") continue;
+
+            if (attr.ConstructorArguments.Length > 0
+                && attr.ConstructorArguments[0].Value is string jsonName
+                && !string.IsNullOrEmpty(jsonName))
+            {
+                info.JsonName = jsonName;
+            }
+
+            // Only one [JsonPropertyName] per property (AttributeUsage disallows more than one).
+            break;
+        }
     }
 
     // ── [OpenApiProperty] reader ──────────────────────────────────────

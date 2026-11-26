@@ -2,6 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.0] - 2026-11-25 — typed status-code responses, multi-content-type, no-body, `[JsonPropertyName]`
+
+Closes [swepay/native-open-api#58](https://github.com/swepay/native-open-api/issues/58),
+raised investigating [swepay/native-guard-backend#154](https://github.com/swepay/native-guard-backend/issues/154)
+(NativeGuard's OAuth2/OIDC routes return plain-JSON RFC 6749 errors, which the generator could
+not document).
+
+### Added
+
+- **`.Produces<T>(statusCode)` / `.Produces<T>(statusCode, contentType)` now work for any
+  status code**, not just the implicit 200. `T` is registered in `components/schemas`.
+  Previously `ApplyProduces` only read the non-generic `.Produces(string contentType)`
+  overload — the generic/status-code form was recognized by name but had no effect, silently.
+- **`.Produces(statusCode)`** (no type argument) declares `statusCode` as having no response
+  body (e.g. a `401`/`403` documented only by a `WWW-Authenticate` header). Emits
+  `x-no-content: true`; `Native.OpenApi.OpenApiLinter.ValidateContentSchemas` accepts the
+  missing `content` only when this marker is present — every other missing-`content` case is
+  still an error. See [ADR-0001](../adr/0001-produces-no-body-overload.md) for the API choice.
+- **Multiple content types for the same status** (e.g.
+  `.Produces<OAuthErrorResponse>(401, "application/json")` + `.ProducesProblem(401)` on the
+  same route, for an RFC 6749 JSON error alongside an RFC 9470 `problem+json` challenge) now
+  merge into **one** response object with multiple `content` entries, instead of two
+  (invalid/ambiguous) `"401":` mapping keys.
+- **`[JsonPropertyName("...")]`** (`System.Text.Json.Serialization`) is now honored by schema
+  extraction wherever `TypePropertyExtractor` resolves properties — command/response schemas,
+  `.Accepts<TBody>()` bodies, and form-urlencoded fields — including
+  `[property: JsonPropertyName(...)]` on a record primary-constructor parameter. Previously
+  every property name was unconditionally camelCased, so an OAuth2 `grant_type` field rendered
+  as `grantType`.
+- **`NLOAPI004`** diagnostic (warning): a fluent call recognized by name
+  (`Produces`/`Produces<T>`) that the generator cannot resolve statically (e.g. a non-literal
+  status code or content type) now reports a compile-time warning naming the call and why,
+  instead of being silently dropped.
+
+### Fixed
+
+- **`.ProducesProblem(statusCode, contentType)` with `contentType != "application/problem+json"`
+  no longer loses its body.** The entry now always carries
+  `ResponseTypeSimpleName = "SwepayProblemDetails"` regardless of the content-type label — a
+  caller relabeling how the RFC 9457 body is served (rather than changing what it contains)
+  used to leave `ResponseTypeSimpleName` null, which rendered with **no** `content` at all
+  (rejected by `OpenApiLinter.ValidateContentSchemas`).
+- **`[ApiResponse(statusCode)]`** (no `typeof`, per its own documented "no response body"
+  meaning) now emits the same `x-no-content: true` marker as `.Produces(statusCode)`, instead
+  of silently rendering with no `content` and no marker.
+
+### Non-Breaking
+
+- Routes that never use any of the new fluent shapes are byte-for-byte unchanged — proven by
+  the full pre-existing test suite (340 generator tests + 141 `Native.OpenApi` tests) passing
+  unmodified.
+- No new `PackageReference`; `[JsonPropertyName]` is matched by simple attribute name only (no
+  project reference onto `System.Text.Json`).
+
 ## [1.9.0] - 2026-11-24 — `requestBody` honors the real body type
 
 ### Added

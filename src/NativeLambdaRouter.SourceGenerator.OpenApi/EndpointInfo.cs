@@ -1,3 +1,5 @@
+using Microsoft.CodeAnalysis;
+
 namespace NativeLambdaRouter.SourceGenerator.OpenApi;
 
 /// <summary>
@@ -248,6 +250,38 @@ internal sealed class EndpointInfo
     /// Emitted as <c>callbacks</c> on the operation. Minimal form: name + expression + HTTP method.
     /// </summary>
     public List<CallbackInfo> Callbacks { get; set; } = new();
+
+    // ------------------------------------------------------------------
+    // swepay/native-open-api#58 additions.
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// Diagnostics captured while analyzing this endpoint's fluent chain, reported by
+    /// <see cref="OpenApiSourceGenerator.Execute"/> once the full endpoint list is known.
+    /// Used for fluent calls that cannot be resolved statically (e.g. a non-literal status
+    /// code) so the generator surfaces a compile-time warning instead of silently dropping
+    /// the call (swepay/native-open-api#58).
+    /// </summary>
+    public List<PendingDiagnostic> Diagnostics { get; set; } = new();
+}
+
+/// <summary>
+/// A diagnostic captured during syntax analysis of a fluent chain call, deferred until
+/// <see cref="OpenApiSourceGenerator.Execute"/> (the only place a
+/// <c>SourceProductionContext</c> is available to actually report it).
+/// </summary>
+internal sealed class PendingDiagnostic
+{
+    public PendingDiagnostic(DiagnosticDescriptor descriptor, Location location, object[] messageArgs)
+    {
+        Descriptor = descriptor;
+        Location = location;
+        MessageArgs = messageArgs;
+    }
+
+    public DiagnosticDescriptor Descriptor { get; }
+    public Location Location { get; }
+    public object[] MessageArgs { get; }
 }
 
 /// <summary>

@@ -6,7 +6,7 @@
 Roslyn Source Generator that emits OpenAPI 3.1 YAML at compile time from
 `NativeLambdaRouter` endpoint maps — zero runtime overhead, zero reflection.
 
-- **Version:** `1.9.0`
+- **Version:** `1.10.0`
 - **Target:** `netstandard2.0` (analyzer), consumed by `net10.0` projects
 - **Generated artifact:** `{OpenApiSpecName ?? AssemblyName}.Generated.GeneratedOpenApiSpec`
 - **Interface:** implements `Native.OpenApi.IGeneratedOpenApiSpec` when that package is referenced
@@ -22,7 +22,7 @@ The generator walks the syntax + semantic model of each compilation looking for:
 | Surface | Where |
 |---|---|
 | Route maps | `routes.MapGet<TCommand, TResponse>(...)`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete`, `Map("METHOD", ...)` |
-| Fluent chain | `.WithName`, `.WithSummary`, `.WithDescription`, `.WithTags`, `.Accepts(contentType)`, **`.Accepts<TBody>()`** (v1.9.0, requires `NativeLambdaRouter` >= 2.5.0), `.Produces(contentType)`, `.ProducesProblem(statusCode)`, `.AllowAnonymous`, **`.ExcludeFromDocs`** |
+| Fluent chain | `.WithName`, `.WithSummary`, `.WithDescription`, `.WithTags`, `.Accepts(contentType)`, **`.Accepts<TBody>()`** (v1.9.0, requires `NativeLambdaRouter` >= 2.5.0), `.Produces(contentType)`, **`.Produces<T>(statusCode[, contentType])`**, **`.Produces(statusCode)`** (no-body, v1.10.0), `.ProducesProblem(statusCode[, contentType])`, `.AllowAnonymous`, **`.ExcludeFromDocs`** |
 | Command attributes (on TCommand class/struct) | `[EndpointName]`, `[EndpointSummary]`, `[EndpointDescription]`, `[Tags]`, `[Accepts]`, `[HideFromDocs]`, `[Deprecated]`, `[ApiExample]`, `[ErrorCatalog]`; v1.8.0 adds `[EndpointExternalDocs]`, `[CodeSample]`, `[OperationBadge]`, `[ScalarStability]`, `[QueryParameter]`, `[HeaderParameter]`, `[ResponseHeader]`, `[ResponseLink]`, `[Callback]`, `[OpenApiDiscriminator]`, `[OpenApiSubType]` |
 | Assembly attributes | v1.8.0: `[assembly: TagMetadata]`, `[assembly: TagGroup]`, `[assembly: OpenApiExternalDocs]`, `[assembly: OpenApiInfo]`, `[assembly: OpenApiServer]`, `[assembly: Webhook]` |
 | Property attributes | v1.8.0: `[property: OpenApiProperty]` on TCommand/TResponse properties; `[OpenApiEnumMember]` on enum fields |
@@ -167,7 +167,9 @@ routes.MapGet<GetClientsCommand, GetClientsResponse>("/v1/clients", ctx => new G
 | `.WithTags("A", "B")` | overrides auto-generated tags |
 | `.Accepts("contentType")` | sets request body content type (default `application/json`) |
 | `.Accepts<TBody>()` | **v1.9.0** — declares the real request body type; `requestBody` documents `TBody`, not the command (requires `NativeLambdaRouter` >= 2.5.0) |
-| `.ProducesProblem(statusCode)` | adds an `application/problem+json` response — points at `SwepayProblemDetails` (F13) |
+| `.Produces<T>(statusCode[, contentType])` | **v1.10.0** — typed response for any status; `T` registered in `components/schemas` |
+| `.Produces(statusCode)` | **v1.10.0** — no type argument: declares `statusCode` with no response body (`x-no-content: true`) |
+| `.ProducesProblem(statusCode[, contentType])` | adds a response pointing at `SwepayProblemDetails` (F13) — always this schema, regardless of `contentType` (v1.10.0 fix) |
 | `.AllowAnonymous()` | emits `security: []` (OpenAPI 3.1 convention) |
 | `.ExcludeFromDocs()` | **F01** — omits this operation from the generated spec |
 
@@ -271,7 +273,61 @@ routes.MapPost<RefreshTokenCommand, TokenResponse>("/v1/realms/{realm}/protocol/
     .Accepts("application/x-www-form-urlencoded");
 ```
 
-The generator emits an inline schema (all fields `type: string`, nullables excluded from `required`) instead of a `$ref` — matches the OAuth2 token endpoint convention. Chain `.Accepts<TBody>()` together with `.Accepts("application/x-www-form-urlencoded")` when the form fields come from a declared body type rather than the command: `.Accepts<TBody>().Accepts("application/x-www-form-urlencoded")`.
+The generator emits an inline schema (all fields `type: string`, nullables excluded from `required`) instead of a `$ref` — matches the OAuth2 token endpoint convention. Chain `.Accepts<TBody>()` together with `.Accepts("application/x-www-form-urlencoded")` when the form fields come from a declared body type rather than the command: `.Accepts<TBody>().Accepts("application/x-www-form-urlencoded")`. Form field names honor `[JsonPropertyName]` — see below.
+
+---
+
+## Typed responses for any status, multi-content-type, and no-body (v1.10.0+)
+
+Closes [swepay/native-open-api#58](https://github.com/swepay/native-open-api/issues/58).
+
+```csharp
+routes.MapPost<TokenCommand, TokenResponse>("/v1/token", ctx => ctx.ToCommand())
+    .Accepts<TokenRequestBody>()
+    .Accepts("application/x-www-form-urlencoded")
+    .Produces<OAuthErrorResponse>(400, "application/json")   // typed response for ANY status
+    .Produces<OAuthErrorResponse>(401, "application/json");
+
+routes.MapGet<UserInfoCommand, UserInfoResponse>("/v1/userinfo", ctx => ctx.ToCommand())
+    .Produces<OAuthErrorResponse>(401, "application/json")   // two content types, same status —
+    .ProducesProblem(401)                                    // merges into ONE "401" response
+    .Produces(403);                                          // 403 with no body at all
+```
+
+| Method | Effect |
+|---|---|
+| `.Produces<T>(statusCode)` | typed response for **any** status (not just 200); `T` registered in `components/schemas`; defaults to `application/json` |
+| `.Produces<T>(statusCode, contentType)` | same, with an explicit content type |
+| `.Produces(statusCode)` | **no type argument** — declares `statusCode` as having no response body; emits `x-no-content: true` instead of a `content` block |
+| Declaring the same status twice (any mix of `.Produces<T>`/`.ProducesProblem`) | merges into **one** response object with multiple `content` entries, one per distinct content type |
+
+Before v1.10.0, `.Produces<T>(statusCode)` was silently ignored for any status other than the
+implicit 200 — `ApplyProduces` only read the non-generic `.Produces(string contentType)`
+overload. `.ProducesProblem(statusCode, contentType)` with a `contentType` other than
+`application/problem+json` rendered with **no** `content` at all, which
+`Native.OpenApi.OpenApiLinter.ValidateContentSchemas` correctly rejected. There was also no way
+to declare a response with no body (e.g. a `401`/`403` documented only by a
+`WWW-Authenticate` header) that the linter would accept — any missing `content` was rejected,
+with no way to say "this one is on purpose." All three are fixed above; see
+[ADR-0001](../../adr/0001-produces-no-body-overload.md) for why `.Produces(statusCode)` is a
+new overload instead of a new verb.
+
+**Diagnostics.** A fluent call the generator recognizes by name but cannot resolve statically —
+e.g. `.Produces<T>(someVariable)` where `someVariable` is not an integer literal — now emits
+`NLOAPI004` (warning) instead of being silently dropped.
+
+**What your project needs to declare.** `Produces<T>(int)`, `Produces<T>(int, string)`,
+`ProducesProblem(int[, string])`, and `Accepts(string)` are unchanged — if your project already
+declares these as no-op extensions on `IRouteEndpointBuilder` (see `native-guard-backend`'s
+`OpenApiEndpointExtensions.cs`), nothing to do. Only the no-body shape needs a matching no-op
+overload added once:
+
+```csharp
+public static IRouteEndpointBuilder Produces(this IRouteEndpointBuilder builder, int statusCode) => builder;
+```
+
+Routes that never use any of these new shapes are byte-for-byte unchanged (proven by the full
+pre-existing test suite passing unmodified).
 
 ---
 
@@ -292,6 +348,19 @@ The generator emits an inline schema (all fields `type: string`, nullables exclu
 | `enum` | `type: string` + `enum: [...]` |
 | complex types | `$ref: "#/components/schemas/{TypeName}"` |
 | nullable reference / `Nullable<T>` | excluded from `required` |
+
+`[JsonPropertyName("wire_name")]` (`System.Text.Json.Serialization`) on a property — or
+`[property: JsonPropertyName("wire_name")]` on a record primary-constructor parameter — wins
+over the camelCase default (v1.10.0+). Matched by attribute name only (no assembly reference
+required). Applies everywhere `TypePropertyExtractor` resolves properties: command/response
+schemas, `.Accepts<TBody>()` bodies, and form-urlencoded fields — so an OAuth2
+`grant_type`/`client_id` body renders with its real wire names instead of `grantType`/`clientId`:
+
+```csharp
+public sealed record TokenRequestBody(
+    [property: JsonPropertyName("grant_type")] string GrantType,
+    [property: JsonPropertyName("client_id")] string ClientId);
+```
 
 ---
 

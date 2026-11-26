@@ -6,7 +6,7 @@
 Compile-time OpenAPI 3.1 for Native AOT .NET 10 APIs. Zero runtime reflection.
 Ships two NuGet packages + a Roslyn Source Generator.
 
-- **Current version:** `1.9.0`
+- **Current version:** `1.10.0`
 - **Target:** `net10.0` (library) / `netstandard2.0` (generator)
 - **AOT:** `PublishAot=true`, `IsTrimmable=true`, no runtime reflection
 - **OpenAPI:** 3.1-only
@@ -40,6 +40,10 @@ Ships two NuGet packages + a Roslyn Source Generator.
 | Add named request/response examples | `[ApiExample(name, summary) { RequestJson, ResponseStatus, ResponseJson }]` on `TCommand` (multi-use); extend with `RequestValue`/`ResponseValue` for inline values | your `Commands.cs` |
 | Centralise error codes | Create a `static class SwepayErrors` with `[ErrorDefinition]` consts, annotate commands with `[ErrorCatalog(typeof(SwepayErrors))]` | new `SwepayErrors.cs` + your `Commands.cs` |
 | Use the canonical `problem+json` schema | Advertise a response with no typed body: `.ProducesProblem(400)` or `[ApiResponse(422, null, "application/problem+json")]` | your `Function.cs` / handler |
+| Document a typed error/response for any status code (not just 200) | `.Produces<ErrorType>(400, "application/json")` | your `Function.cs` / handler |
+| Declare a response with no body at all | `.Produces(401)` (no type argument) → emits `x-no-content: true` | your `Function.cs` / handler |
+| Document two content types for the same status | Chain both: `.Produces<T>(401, "application/json").ProducesProblem(401)` | your `Function.cs` / handler |
+| Use a snake_case (or any custom) wire name for a schema property | `[JsonPropertyName("grant_type")]` on the property, or `[property: JsonPropertyName("grant_type")]` on a record parameter | your request/response types |
 | Brand the Redoc/Scalar page | Instantiate `OpenApiRendererOptions` with `Branding`, `Footer`, `EnableMermaid`; pass to `OpenApiHtmlRenderer.Render*(spec, title, options)` | the project that hosts `/docs/*` |
 | Configure the Scalar viewer (theme, dark mode, layout, hide panels) | Set `OpenApiRendererOptions.ScalarViewer` to a new `OpenApiScalarViewerOptions { Theme, DarkMode, Layout, ... }` | the project that hosts `/docs/scalar` |
 | Draw a diagram inside a description | Put a fenced ` ```mermaid ` block in the `description` text and enable `options.EnableMermaid` | the `[EndpointDescription]` or `.WithDescription(...)` |
@@ -144,6 +148,48 @@ Set via `OpenApiRendererOptions.ScalarViewer = new OpenApiScalarViewerOptions { 
 | `DefaultHttpClientClientKey` | `string?` | `null` | client library within the target (e.g. `"curl"`, `"wget"` for Shell) |
 | `LocalAssetPath` | `string?` | `null` | local JS bundle path for air-gapped deployments |
 
+### Feature matrix — v1.10.0 — typed status-code responses, multi-content-type, no-body, `[JsonPropertyName]`
+
+Closes [swepay/native-open-api#58](https://github.com/swepay/native-open-api/issues/58). All additions are opt-in; no existing API breaks (proven by the full pre-existing test suite passing byte-for-byte unchanged).
+
+**Example first.** An OAuth2 `/token` endpoint that returns a plain-JSON error on `400`/`401` (RFC 6749 shape, not `problem+json`), and a `/userinfo` endpoint whose `401` has no body at all:
+
+```csharp
+builder
+    .MapPost<TokenCommand, TokenResponse>("/v1/token", ctx => ctx.ToCommand())
+    .Accepts<TokenRequestBody>()                              // honors [JsonPropertyName] below
+    .Accepts("application/x-www-form-urlencoded")
+    .Produces<OAuthErrorResponse>(400, "application/json")    // NEW: typed response for ANY status
+    .Produces<OAuthErrorResponse>(401, "application/json");
+
+builder
+    .MapGet<UserInfoCommand, UserInfoResponse>("/v1/userinfo", ctx => ctx.ToCommand())
+    .Produces<OAuthErrorResponse>(401, "application/json")    // two content types, same status —
+    .ProducesProblem(401)                                     // merges into ONE "401" response
+    .Produces(403);                                           // NEW: 403 with no body at all
+
+public sealed record TokenRequestBody(
+    [property: JsonPropertyName("grant_type")] string GrantType,   // NEW: honored, not camelCased
+    [property: JsonPropertyName("client_id")] string ClientId);
+```
+
+| Surface | Before 1.10.0 | 1.10.0 |
+|---|---|---|
+| `.Produces<T>(statusCode)` / `.Produces<T>(statusCode, contentType)` | Silently ignored for any status other than the implicit 200 | Typed response for **any** status; `T` registered in `components/schemas` |
+| `.ProducesProblem(statusCode, contentType)` with `contentType != "application/problem+json"` | Rendered with **no** `content` (rejected by `OpenApiLinter`) | Still renders the `SwepayProblemDetails` schema, labeled with the caller's content type |
+| Same status, two content types (e.g. `.Produces<OAuthErrorResponse>(401, "application/json")` + `.ProducesProblem(401)`) | Two `"401":` mapping keys (invalid/ambiguous YAML) | One `"401":` response with two `content` entries |
+| No-body response (e.g. `401`/`403` with only a `WWW-Authenticate` header) | No declaration possible; linter always required `content` | `.Produces(statusCode)` (no type argument) → `x-no-content: true`; linter accepts the missing `content` only with this marker |
+| A fluent call the generator cannot resolve statically (e.g. a non-literal status code) | Silently dropped, no feedback | `NLOAPI004` compile-time warning naming the call and why |
+| `[JsonPropertyName("...")]` on a schema property (class or record, via `[property: ...]`) | Ignored — always camelCased (`grant_type` → `grantType`) | Honored — wins over the camelCase default |
+
+**What your consumer needs to declare.** `Produces<T>(int)`, `Produces<T>(int, string)`, `ProducesProblem(int[, string])`, and `Accepts(string)` are unchanged — if your project already declares them as no-op extensions on `IRouteEndpointBuilder` (see `native-guard-backend`'s `OpenApiEndpointExtensions.cs`), nothing to do. Only the no-body shape is new and needs a matching no-op overload:
+
+```csharp
+public static IRouteEndpointBuilder Produces(this IRouteEndpointBuilder builder, int statusCode) => builder;
+```
+
+See [ADR-0001](adr/0001-produces-no-body-overload.md) for why this is a `Produces` overload rather than a new verb like `ProducesNoBody`.
+
 ### MSBuild properties exposed to the generator
 
 Declared in [src/NativeLambdaRouter.SourceGenerator.OpenApi/build/NativeLambdaRouter.SourceGenerator.OpenApi.props](src/NativeLambdaRouter.SourceGenerator.OpenApi/build/NativeLambdaRouter.SourceGenerator.OpenApi.props).
@@ -167,8 +213,8 @@ Declared in [src/NativeLambdaRouter.SourceGenerator.OpenApi/build/NativeLambdaRo
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="NativeOpenApi" Version="1.9.0" />
-  <PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi" Version="1.9.0"
+  <PackageReference Include="NativeOpenApi" Version="1.10.0" />
+  <PackageReference Include="NativeLambdaRouter.SourceGenerator.OpenApi" Version="1.10.0"
                     OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 </ItemGroup>
 ```
