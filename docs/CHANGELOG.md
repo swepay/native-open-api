@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.1] - 2026-11-26 — `x-no-content` marker accepted when the document comes from YAML
+
+Closes [swepay/native-open-api#60](https://github.com/swepay/native-open-api/issues/60).
+
+### Fixed
+
+- **`OpenApiLinter` accepts `x-no-content: true` on documents loaded from YAML.**
+  `OpenApiDocumentLoaderBase.LoadFromYaml` converts every YAML scalar to a JSON string, so the
+  marker emitted by `.Produces(statusCode)` arrived as `"true"` and the linter still reported
+  `content required for ...`, failing `WarmUp()` in consumers. The linter now also accepts the
+  string `"true"` (case-insensitive); the loader's scalar handling is unchanged. New end-to-end
+  test YAML → loader → linter (`NoContentMarkerFromYamlTests`).
+
 ## [1.10.0] - 2026-11-25 — typed status-code responses, multi-content-type, no-body, `[JsonPropertyName]`
 
 Closes [swepay/native-open-api#58](https://github.com/swepay/native-open-api/issues/58),

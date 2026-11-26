@@ -173,9 +173,15 @@ public sealed class OpenApiLinter
     /// </summary>
     private static bool HasExplicitNoContentMarker(JsonObject container)
     {
-        return container["x-no-content"] is JsonValue marker
-            && marker.TryGetValue(out bool noContent)
-            && noContent;
+        if (container["x-no-content"] is not JsonValue marker)
+        {
+            return false;
+        }
+
+        // A document loaded from YAML carries every scalar as a JSON string (#60).
+        return marker.TryGetValue(out bool noContent)
+            ? noContent
+            : marker.TryGetValue(out string? text) && string.Equals(text, "true", StringComparison.OrdinalIgnoreCase);
     }
 
     private void ValidateSensitiveSchemas(string sourceName, JsonNode root, List<string> errors)
