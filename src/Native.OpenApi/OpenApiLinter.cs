@@ -138,6 +138,17 @@ public sealed class OpenApiLinter
     {
         if (container["content"] is not JsonObject content)
         {
+            // x-no-content: true (swepay/native-open-api#58) is the generator's explicit
+            // marker for a deliberately body-less response (e.g. a 401/403 documented only by
+            // a WWW-Authenticate header, via .Produces(statusCode) with no type argument).
+            // Without this marker, a missing `content` is indistinguishable from a
+            // .Produces<T>()/.ProducesProblem() call the generator silently dropped — which is
+            // exactly the defect this rule exists to catch, so it stays an error.
+            if (HasExplicitNoContentMarker(container))
+            {
+                return;
+            }
+
             errors.Add($"{sourceName}: content required for {location}");
             return;
         }
@@ -154,6 +165,17 @@ public sealed class OpenApiLinter
                 errors.Add($"{sourceName}: schema required for {location} ({media.Key})");
             }
         }
+    }
+
+    /// <summary>
+    /// True when <paramref name="container"/> (a response or requestBody object) carries the
+    /// generator's <c>x-no-content: true</c> marker (swepay/native-open-api#58).
+    /// </summary>
+    private static bool HasExplicitNoContentMarker(JsonObject container)
+    {
+        return container["x-no-content"] is JsonValue marker
+            && marker.TryGetValue(out bool noContent)
+            && noContent;
     }
 
     private void ValidateSensitiveSchemas(string sourceName, JsonNode root, List<string> errors)

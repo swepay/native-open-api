@@ -374,31 +374,53 @@ internal static class OpenApiYamlGenerator
                     AppendResponseExamples(sb, endpoint, 200);
                 }
 
-                // Additional .Produces<T>() / .ProducesProblem() responses
-                foreach (var produces in endpoint.AdditionalProduces)
+                // Additional .Produces<T>() / .ProducesProblem() / .Produces(statusCode) responses,
+                // grouped by status code (swepay/native-open-api#58): a status declared more than
+                // once — e.g. an OAuth `application/json` error body alongside an RFC 9470
+                // `application/problem+json` challenge on the same 401 — merges into ONE response
+                // object with multiple `content` entries, instead of emitting the same YAML
+                // mapping key twice (which silently kept only the last declaration for any
+                // reader that treats duplicate keys as an overwrite, and is rejected outright by
+                // strict YAML 1.2 parsers).
+                foreach (var group in GroupProducesByStatus(endpoint.AdditionalProduces))
                 {
-                    var statusCodeStr = produces.StatusCode.ToString();
-                    sb.AppendLine($"        \"{statusCodeStr}\":");
-                    sb.AppendLine($"          description: \"{GetStatusCodeDescription(produces.StatusCode)}\"");
-                    AppendResponseHeaders(sb, endpoint, produces.StatusCode);
-                    AppendResponseLinks(sb, endpoint, produces.StatusCode);
-                    if (produces.ResponseTypeSimpleName != null)
+                    sb.AppendLine($"        \"{group.StatusCode}\":");
+                    sb.AppendLine($"          description: \"{GetStatusCodeDescription(group.StatusCode)}\"");
+                    AppendResponseHeaders(sb, endpoint, group.StatusCode);
+                    AppendResponseLinks(sb, endpoint, group.StatusCode);
+
+                    var seenContentTypes = new HashSet<string>(StringComparer.Ordinal);
+                    var typedEntries = new List<ProducesInfo>();
+                    foreach (var entry in group.Entries)
+                    {
+                        if (entry.ResponseTypeSimpleName != null && seenContentTypes.Add(entry.ContentType))
+                        {
+                            typedEntries.Add(entry);
+                        }
+                    }
+
+                    if (typedEntries.Count > 0)
                     {
                         sb.AppendLine("          content:");
-                        sb.AppendLine($"            {produces.ContentType}:");
-                        sb.AppendLine("              schema:");
-                        sb.AppendLine($"                $ref: \"#/components/schemas/{produces.ResponseTypeSimpleName}\"");
-                        AppendResponseExamples(sb, endpoint, produces.StatusCode);
+                        foreach (var entry in typedEntries)
+                        {
+                            sb.AppendLine($"            {entry.ContentType}:");
+                            sb.AppendLine("              schema:");
+                            sb.AppendLine($"                $ref: \"#/components/schemas/{entry.ResponseTypeSimpleName}\"");
+                            AppendResponseExamples(sb, endpoint, group.StatusCode);
+                        }
                     }
-                    else if (produces.ContentType == "application/problem+json")
+                    else if (group.Entries.Any(e => e.NoBody))
                     {
-                        // RFC § F13 — point all problem+json responses at the shared schema.
-                        sb.AppendLine("          content:");
-                        sb.AppendLine($"            {produces.ContentType}:");
-                        sb.AppendLine("              schema:");
-                        sb.AppendLine("                $ref: \"#/components/schemas/SwepayProblemDetails\"");
-                        AppendResponseExamples(sb, endpoint, produces.StatusCode);
+                        // Explicit "no body" declaration (.Produces(statusCode), e.g. a 401/403
+                        // documented only by a WWW-Authenticate response header). x-no-content
+                        // tells OpenApiLinter.ValidateContentSchemas this missing `content` is
+                        // deliberate, not a dropped .Produces<T>()/.ProducesProblem() call.
+                        sb.AppendLine("          x-no-content: true");
                     }
+                    // else: every entry for this status was a call the analysis phase could not
+                    // resolve — already reported via an NLOAPI004 diagnostic — so nothing is
+                    // emitted here, same as the pre-#58 silent-drop behavior.
                 }
 
                 // Standard error responses (only emit if not already covered by AdditionalProduces)
@@ -538,10 +560,45 @@ internal static class OpenApiYamlGenerator
         {
             foreach (var produces in endpoint.AdditionalProduces)
             {
-                if (produces.ContentType == "application/problem+json") return true;
+                // ResponseTypeSimpleName is the robust check: .ProducesProblem(...) always sets
+                // it to "SwepayProblemDetails" (swepay/native-open-api#58), even when a caller
+                // relabels the content type away from the literal "application/problem+json"
+                // string. The literal check is kept for any entry that references the schema
+                // by other means.
+                if (produces.ResponseTypeSimpleName == "SwepayProblemDetails"
+                    || produces.ContentType == "application/problem+json")
+                {
+                    return true;
+                }
             }
         }
         return false;
+    }
+
+    /// <summary>
+    /// Groups <paramref name="additionalProduces"/> by <see cref="ProducesInfo.StatusCode"/>,
+    /// preserving the order each distinct status code was first declared in the fluent chain
+    /// (swepay/native-open-api#58). A plain <c>GroupBy</c> would work too, but this keeps the
+    /// generator's output order deterministic without relying on LINQ's (implementation-defined
+    /// but stable) grouping order.
+    /// </summary>
+    private static List<(int StatusCode, List<ProducesInfo> Entries)> GroupProducesByStatus(
+        List<ProducesInfo> additionalProduces)
+    {
+        var groups = new List<(int StatusCode, List<ProducesInfo> Entries)>();
+        foreach (var produces in additionalProduces)
+        {
+            var index = groups.FindIndex(g => g.StatusCode == produces.StatusCode);
+            if (index >= 0)
+            {
+                groups[index].Entries.Add(produces);
+            }
+            else
+            {
+                groups.Add((produces.StatusCode, new List<ProducesInfo> { produces }));
+            }
+        }
+        return groups;
     }
 
     private static bool AnyAuthenticatedEndpoint(IReadOnlyList<EndpointInfo> endpoints)

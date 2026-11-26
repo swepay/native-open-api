@@ -7,7 +7,7 @@ OpenAPI 3.1 primitives for Native AOT .NET 10 — document loading, linting,
 merging, HTML rendering, and a catalog of UX attributes consumed by
 [`NativeLambdaRouter.SourceGenerator.OpenApi`](../NativeLambdaRouter.SourceGenerator.OpenApi/).
 
-- **Version:** `1.9.0`
+- **Version:** `1.10.0`
 - **Target:** `net10.0`
 - **Namespace root:** `Native.OpenApi`
 - **AOT:** zero runtime reflection; serialization through source-generated contexts
@@ -561,6 +561,13 @@ Checks:
 - Every operation has a security block (or explicit `security: []` for anonymous)
 - Required error responses are declared
 - Sensitive fields carry a description
+- Every response/requestBody declares `content` with a `schema` — **unless** it carries the
+  explicit `x-no-content: true` marker (v1.10.0+; emitted by
+  `NativeLambdaRouter.SourceGenerator.OpenApi`'s `.Produces(statusCode)` with no type
+  argument, for a deliberately body-less response such as a `401` documented only by a
+  `WWW-Authenticate` header). A missing `content` with **no** marker is always an error — it
+  is indistinguishable from a dropped `.Produces<T>()`/`.ProducesProblem()` call, which is
+  exactly the defect this rule exists to catch.
 
 ---
 

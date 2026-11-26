@@ -780,4 +780,175 @@ public sealed class OpenApiYamlGeneratorTests
         yaml.Should().Contain("application/json:");
         yaml.Should().Contain("$ref: \"#/components/schemas/CreateItemCommand\"");
     }
+
+    // ── AdditionalProduces grouping (swepay/native-open-api#58) ──────
+
+    [Fact]
+    public void Generate_AdditionalProducesWithSameStatusTwoContentTypes_MergesIntoOneResponseObject()
+    {
+        // Arrange — two ProducesInfo entries for the same status code (one typed, one
+        // ProducesProblem) must render as ONE "401": response with two `content` entries,
+        // not two separate (invalid) "401": mapping keys.
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "GET",
+                Path = "/v1/userinfo",
+                CommandTypeName = "TestApp.UserInfoCommand",
+                ResponseTypeName = "TestApp.UserInfoResponse",
+                CommandSimpleName = "UserInfoCommand",
+                ResponseSimpleName = "UserInfoResponse",
+                AdditionalProduces =
+                [
+                    new ProducesInfo { StatusCode = 401, ResponseTypeSimpleName = "OAuthErrorResponse", ContentType = "application/json" },
+                    new ProducesInfo { StatusCode = 401, ResponseTypeSimpleName = "SwepayProblemDetails", ContentType = "application/problem+json" }
+                ]
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+
+        // Assert
+        CountOccurrences(yaml, "\"401\":").Should().Be(1);
+        yaml.Should().Contain("application/json:");
+        yaml.Should().Contain("application/problem+json:");
+        yaml.Should().Contain("$ref: \"#/components/schemas/OAuthErrorResponse\"");
+        yaml.Should().Contain("$ref: \"#/components/schemas/SwepayProblemDetails\"");
+    }
+
+    [Fact]
+    public void Generate_AdditionalProducesWithSameStatusSameContentTypeTwice_DoesNotDuplicateContentEntry()
+    {
+        // Arrange — a status/content-type pair declared twice (e.g. a duplicate
+        // .ProducesProblem(401) call) must not render the same media type key twice under
+        // the same `content:` map.
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "GET",
+                Path = "/v1/items/{id}",
+                CommandTypeName = "TestApp.GetItemCommand",
+                ResponseTypeName = "TestApp.GetItemResponse",
+                CommandSimpleName = "GetItemCommand",
+                ResponseSimpleName = "GetItemResponse",
+                AdditionalProduces =
+                [
+                    new ProducesInfo { StatusCode = 401, ResponseTypeSimpleName = "SwepayProblemDetails", ContentType = "application/problem+json" },
+                    new ProducesInfo { StatusCode = 401, ResponseTypeSimpleName = "SwepayProblemDetails", ContentType = "application/problem+json" }
+                ]
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+        var responseBlock = ExtractOperationResponseBlock(yaml, 401);
+
+        // Assert
+        CountOccurrences(yaml, "\"401\":").Should().Be(1);
+        CountOccurrences(responseBlock, "application/problem+json:").Should().Be(1);
+    }
+
+    [Fact]
+    public void Generate_ProducesProblem_NonProblemContentType_StillEmitsSwepayProblemDetailsContent()
+    {
+        // Arrange — regression for swepay/native-open-api#58 item 2: a ProducesInfo entry
+        // from .ProducesProblem(status, contentType) must always carry
+        // ResponseTypeSimpleName = "SwepayProblemDetails", regardless of the content-type
+        // label, and must therefore still get a `content` block.
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "GET",
+                Path = "/v1/items/{id}",
+                CommandTypeName = "TestApp.GetItemCommand",
+                ResponseTypeName = "TestApp.GetItemResponse",
+                CommandSimpleName = "GetItemCommand",
+                ResponseSimpleName = "GetItemResponse",
+                AdditionalProduces =
+                [
+                    new ProducesInfo { StatusCode = 400, ResponseTypeSimpleName = "SwepayProblemDetails", ContentType = "application/json" }
+                ]
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+
+        // Assert
+        yaml.Should().Contain("\"400\":");
+        yaml.Should().Contain("content:");
+        yaml.Should().Contain("$ref: \"#/components/schemas/SwepayProblemDetails\"");
+    }
+
+    [Fact]
+    public void Generate_AdditionalProducesWithNoBody_EmitsNoContentMarkerAndNoContentBlock()
+    {
+        // Arrange — .Produces(statusCode) (no type argument): explicit "no body" response.
+        var endpoints = new List<EndpointInfo>
+        {
+            new()
+            {
+                Method = "GET",
+                Path = "/v1/userinfo",
+                CommandTypeName = "TestApp.UserInfoCommand",
+                ResponseTypeName = "TestApp.UserInfoResponse",
+                CommandSimpleName = "UserInfoCommand",
+                ResponseSimpleName = "UserInfoResponse",
+                AdditionalProduces =
+                [
+                    new ProducesInfo { StatusCode = 401, ResponseTypeSimpleName = null, NoBody = true }
+                ],
+                ResponseHeaders =
+                [
+                    new ResponseHeaderInfo { StatusCode = 401, Name = "WWW-Authenticate", SchemaType = "string" }
+                ]
+            }
+        };
+
+        // Act
+        var yaml = OpenApiYamlGenerator.Generate(endpoints, "TestApi", "1.0.0");
+
+        // Assert
+        var responseBlock = ExtractOperationResponseBlock(yaml, 401);
+        responseBlock.Should().Contain("x-no-content: true");
+        responseBlock.Should().Contain("WWW-Authenticate");
+        // Checks for the `content:` key specifically (not merely the "content:" substring,
+        // which "x-no-content: true" itself also contains).
+        responseBlock.Should().NotContain("          content:");
+    }
+
+    /// <summary>
+    /// Extracts the single <c>responses.{statusCode}</c> block text for the (only) operation
+    /// in the generated YAML, stopping right before the next status-code key at the same
+    /// indentation (8 spaces) — or at the end of the string if this is the last one. Response
+    /// status keys are the only 8-space-indented quoted keys in the document, so this never
+    /// runs into <c>components/responses</c> (4-space indented) or any other section.
+    /// </summary>
+    private static string ExtractOperationResponseBlock(string yaml, int statusCode)
+    {
+        const string nextKeyMarker = "\n        \"";
+        var marker = $"        \"{statusCode}\":";
+        var start = yaml.IndexOf(marker, StringComparison.Ordinal);
+        start.Should().BeGreaterThanOrEqualTo(0, $"the generated YAML must contain a \"{statusCode}\": response key");
+
+        var nextKeyIndex = yaml.IndexOf(nextKeyMarker, start + marker.Length, StringComparison.Ordinal);
+        var end = nextKeyIndex >= 0 ? nextKeyIndex : yaml.Length;
+        return yaml.Substring(start, end - start);
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = haystack.IndexOf(needle, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+        return count;
+    }
 }

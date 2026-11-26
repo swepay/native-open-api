@@ -40,6 +40,23 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         isEnabledByDefault: true);
 
     /// <summary>
+    /// A fluent OpenAPI metadata call was recognized by name but could not be resolved
+    /// statically, so it has no effect on the generated spec (swepay/native-open-api#58).
+    /// Replaces the previous silent drop for <c>.Produces&lt;T&gt;(...)</c> calls whose status
+    /// code, content type, or type argument the generator cannot read as a compile-time literal.
+    /// </summary>
+    private static readonly DiagnosticDescriptor ProducesCallIgnored = new(
+        "NLOAPI004",
+        "Fluent OpenAPI call has no effect",
+        "'.{0}(...)' at {1} has no effect on the generated OpenAPI spec: {2}. " +
+        "Fix: pass literal arguments the generator can read at compile time — e.g. " +
+        "\".Produces<OAuthErrorResponse>(400, \\\"application/json\\\")\" for a typed error body, " +
+        "or \".Produces(401)\" for a response with no body.",
+        "Usage",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    /// <summary>
     /// Initializes the incremental source generator.
     /// </summary>
     /// <param name="context">The initialization context.</param>
@@ -290,7 +307,23 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
                     break;
 
                 case "Produces":
-                    ApplyProduces(parentInvocation, endpoint);
+                    // Four independently-chainable forms share this name:
+                    //   .Produces(string contentType)                  -- legacy: sets the
+                    //                                                      implicit 200 content type.
+                    //   .Produces(int statusCode)                      -- explicit "no body"
+                    //                                                      declaration (swepay/native-open-api#58).
+                    //   .Produces<T>(int statusCode)                   -- typed response, any status
+                    //                                                      (swepay/native-open-api#58).
+                    //   .Produces<T>(int statusCode, string contentType) -- typed response, explicit content type.
+                    // A GenericNameSyntax with exactly one type argument is one of the last two.
+                    if (parentMemberAccess.Name is GenericNameSyntax { TypeArgumentList.Arguments.Count: 1 } producesGeneric)
+                    {
+                        ApplyProducesTyped(parentInvocation, producesGeneric, semanticModel, endpoint);
+                    }
+                    else
+                    {
+                        ApplyProduces(parentInvocation, endpoint);
+                    }
                     break;
 
                 case "WithName":
@@ -339,6 +372,16 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
     /// <summary>
     /// Handles .ProducesProblem(statusCode, contentType).
     /// </summary>
+    /// <remarks>
+    /// <see cref="ProducesInfo.ResponseTypeSimpleName"/> is always set to
+    /// <c>"SwepayProblemDetails"</c>, regardless of <paramref name="invocation"/>'s content-type
+    /// argument: <c>.ProducesProblem</c> always documents the RFC 9457 shape — a caller passing a
+    /// non-<c>application/problem+json</c> content type is only relabeling how that same body is
+    /// served (e.g. a gateway that forces <c>application/json</c>), not changing what it contains.
+    /// Before swepay/native-open-api#58, a non-default content type left
+    /// <c>ResponseTypeSimpleName</c> null, which <c>OpenApiYamlGenerator</c> rendered as a response
+    /// with no <c>content</c> at all — silently failing <c>OpenApiLinter.ValidateContentSchemas</c>.
+    /// </remarks>
     private static void ApplyProducesProblem(InvocationExpressionSyntax invocation, EndpointInfo endpoint)
     {
         var args = invocation.ArgumentList.Arguments;
@@ -355,14 +398,17 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         endpoint.AdditionalProduces.Add(new ProducesInfo
         {
             StatusCode = statusCode,
-            ResponseTypeSimpleName = null,
+            ResponseTypeSimpleName = "SwepayProblemDetails",
             ContentType = contentType
         });
     }
 
     /// <summary>
-    /// Handles <c>.Produces(contentType)</c> or <c>.Produces&lt;T&gt;(contentType)</c>.
-    /// Sets the content type for the default 200 response.
+    /// Handles the two non-generic overloads that share the <c>Produces</c> name:
+    /// <c>.Produces(string contentType)</c> (legacy — sets the content type of the implicit
+    /// 200 response) and <c>.Produces(int statusCode)</c> (swepay/native-open-api#58 — declares
+    /// <paramref name="invocation"/>'s status code as an explicit "no body" response, e.g. a
+    /// 401/403 documented only by a <c>WWW-Authenticate</c> response header).
     /// </summary>
     private static void ApplyProduces(InvocationExpressionSyntax invocation, EndpointInfo endpoint)
     {
@@ -373,6 +419,105 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
         if (!string.IsNullOrEmpty(contentType))
         {
             endpoint.ProducesContentType = contentType;
+            return;
+        }
+
+        var statusCode = ExtractIntArgument(args[0]);
+        if (statusCode.HasValue)
+        {
+            endpoint.AdditionalProduces.Add(new ProducesInfo
+            {
+                StatusCode = statusCode.Value,
+                ResponseTypeSimpleName = null,
+                NoBody = true
+            });
+            return;
+        }
+
+        endpoint.Diagnostics.Add(new PendingDiagnostic(
+            ProducesCallIgnored,
+            invocation.GetLocation(),
+            new object[]
+            {
+                "Produces",
+                $"{endpoint.Method} {endpoint.Path}",
+                "the argument is neither a string content-type literal nor an integer status-code literal"
+            }));
+    }
+
+    /// <summary>
+    /// Handles <c>.Produces&lt;T&gt;(statusCode)</c> and
+    /// <c>.Produces&lt;T&gt;(statusCode, contentType)</c> (swepay/native-open-api#58): registers a
+    /// typed response for <em>any</em> status code, not just the implicit 200. Mirrors
+    /// <see cref="ApplyAcceptsBodyType"/> — resolves the <c>T</c> type argument via the semantic
+    /// model and runs the same schema discovery so it is documented in <c>components/schemas</c>.
+    /// </summary>
+    private static void ApplyProducesTyped(
+        InvocationExpressionSyntax invocation,
+        GenericNameSyntax producesGeneric,
+        SemanticModel semanticModel,
+        EndpointInfo endpoint)
+    {
+        var args = invocation.ArgumentList.Arguments;
+        var location = endpoint.Method + " " + endpoint.Path;
+
+        if (args.Count == 0)
+        {
+            endpoint.Diagnostics.Add(new PendingDiagnostic(
+                ProducesCallIgnored, invocation.GetLocation(),
+                new object[] { "Produces<T>", location, "no status code argument was provided" }));
+            return;
+        }
+
+        var statusCode = ExtractIntArgument(args[0]);
+        if (!statusCode.HasValue)
+        {
+            endpoint.Diagnostics.Add(new PendingDiagnostic(
+                ProducesCallIgnored, invocation.GetLocation(),
+                new object[] { "Produces<T>", location, "the status code argument is not an integer literal" }));
+            return;
+        }
+
+        var contentType = "application/json";
+        if (args.Count > 1)
+        {
+            var ct = ExtractStringArgument(args[1]);
+            if (ct != null)
+            {
+                contentType = ct;
+            }
+            else
+            {
+                endpoint.Diagnostics.Add(new PendingDiagnostic(
+                    ProducesCallIgnored, invocation.GetLocation(),
+                    new object[]
+                    {
+                        "Produces<T>", location,
+                        $"the content-type argument is not a string literal; defaulting to \"{contentType}\""
+                    }));
+            }
+        }
+
+        var bodyTypeSyntax = producesGeneric.TypeArgumentList.Arguments[0];
+        var bodyType = semanticModel.GetTypeInfo(bodyTypeSyntax).Type;
+        if (bodyType == null)
+        {
+            endpoint.Diagnostics.Add(new PendingDiagnostic(
+                ProducesCallIgnored, invocation.GetLocation(),
+                new object[] { "Produces<T>", location, "the type argument could not be resolved" }));
+            return;
+        }
+
+        endpoint.AdditionalProduces.Add(new ProducesInfo
+        {
+            StatusCode = statusCode.Value,
+            ResponseTypeSimpleName = bodyType.Name,
+            ContentType = contentType
+        });
+
+        foreach (var schema in TypePropertyExtractor.DiscoverSchemas(bodyType))
+        {
+            endpoint.ReferencedSchemas.Add(schema);
         }
     }
 
@@ -599,43 +744,43 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
 
                 // Structural Wave 5 — query parameters (in: query).
                 case "QueryParameterAttribute":
-                {
-                    var param = ExtractExplicitParameter(attr, "query");
-                    if (param != null) endpoint.QueryParameters.Add(param);
-                    break;
-                }
+                    {
+                        var param = ExtractExplicitParameter(attr, "query");
+                        if (param != null) endpoint.QueryParameters.Add(param);
+                        break;
+                    }
 
                 // Structural Wave 5 — header parameters (in: header).
                 case "HeaderParameterAttribute":
-                {
-                    var param = ExtractExplicitParameter(attr, "header");
-                    if (param != null) endpoint.HeaderParameters.Add(param);
-                    break;
-                }
+                    {
+                        var param = ExtractExplicitParameter(attr, "header");
+                        if (param != null) endpoint.HeaderParameters.Add(param);
+                        break;
+                    }
 
                 // Structural Wave 5 — response headers.
                 case "ResponseHeaderAttribute":
-                {
-                    var rh = ExtractResponseHeader(attr);
-                    if (rh != null) endpoint.ResponseHeaders.Add(rh);
-                    break;
-                }
+                    {
+                        var rh = ExtractResponseHeader(attr);
+                        if (rh != null) endpoint.ResponseHeaders.Add(rh);
+                        break;
+                    }
 
                 // Structural Wave 5 — response links.
                 case "ResponseLinkAttribute":
-                {
-                    var rl = ExtractResponseLink(attr);
-                    if (rl != null) endpoint.ResponseLinks.Add(rl);
-                    break;
-                }
+                    {
+                        var rl = ExtractResponseLink(attr);
+                        if (rl != null) endpoint.ResponseLinks.Add(rl);
+                        break;
+                    }
 
                 // Structural Wave 5 — callbacks (minimal implementation).
                 case "CallbackAttribute":
-                {
-                    var cb = ExtractCallback(attr);
-                    if (cb != null) endpoint.Callbacks.Add(cb);
-                    break;
-                }
+                    {
+                        var cb = ExtractCallback(attr);
+                        if (cb != null) endpoint.Callbacks.Add(cb);
+                        break;
+                    }
             }
         }
     }
@@ -798,13 +943,13 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
 
         return underlying.SpecialType switch
         {
-            SpecialType.System_String  => ("string", null),
+            SpecialType.System_String => ("string", null),
             SpecialType.System_Boolean => ("boolean", null),
-            SpecialType.System_Int32   => ("integer", "int32"),
-            SpecialType.System_Int64   => ("integer", "int64"),
-            SpecialType.System_Double  => ("number", "double"),
+            SpecialType.System_Int32 => ("integer", "int32"),
+            SpecialType.System_Int64 => ("integer", "int64"),
+            SpecialType.System_Double => ("number", "double"),
             SpecialType.System_Decimal => ("number", "double"),
-            SpecialType.System_Single  => ("number", "float"),
+            SpecialType.System_Single => ("number", "float"),
             _ => ResolveSchemaByName(underlying.Name)
         };
     }
@@ -813,19 +958,19 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
     {
         return typeName switch
         {
-            "Guid"           => ("string", "uuid"),
-            "DateTime"       => ("string", "date-time"),
+            "Guid" => ("string", "uuid"),
+            "DateTime" => ("string", "date-time"),
             "DateTimeOffset" => ("string", "date-time"),
-            "DateOnly"       => ("string", "date"),
-            "TimeSpan"       => ("string", null),
-            "Uri"            => ("string", "uri"),
-            "Byte"           => ("integer", "int32"),
-            "SByte"          => ("integer", "int32"),
-            "Int16"          => ("integer", "int32"),
-            "UInt16"         => ("integer", "int32"),
-            "UInt32"         => ("integer", "int64"),
-            "UInt64"         => ("integer", null),
-            _                => ("string", null)
+            "DateOnly" => ("string", "date"),
+            "TimeSpan" => ("string", null),
+            "Uri" => ("string", "uri"),
+            "Byte" => ("integer", "int32"),
+            "SByte" => ("integer", "int32"),
+            "Int16" => ("integer", "int32"),
+            "UInt16" => ("integer", "int32"),
+            "UInt32" => ("integer", "int64"),
+            "UInt64" => ("integer", null),
+            _ => ("string", null)
         };
     }
 
@@ -1271,7 +1416,14 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
             {
                 StatusCode = statusCode,
                 ResponseTypeSimpleName = responseTypeName,
-                ContentType = contentType
+                ContentType = contentType,
+                // [ApiResponseAttribute]'s own doc comment: "Null indicates no response body
+                // (e.g., 204 No Content, 404 Not Found)". Before swepay/native-open-api#58 this
+                // was rendered with no `content` and no marker — indistinguishable from (and
+                // just as rejected by OpenApiLinter.ValidateContentSchemas as) a dropped
+                // .Produces<T>() call. Treating the omitted type as the explicit no-body
+                // declaration the attribute already documents fixes that silent failure.
+                NoBody = responseTypeSymbol == null
             });
 
             // BUG-FIX (dangling $ref): discover and register all schemas reachable from
@@ -1407,6 +1559,19 @@ public sealed class OpenApiSourceGenerator : IIncrementalGenerator
                 Location.None,
                 endpoint.Method,
                 endpoint.Path));
+        }
+
+        // swepay/native-open-api#58 — surface fluent calls the analysis phase recognized by
+        // name but could not resolve statically, instead of the previous silent drop.
+        foreach (var endpoint in endpoints)
+        {
+            foreach (var pending in endpoint.Diagnostics)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    pending.Descriptor,
+                    pending.Location,
+                    pending.MessageArgs));
+            }
         }
 
         // Read MSBuild properties: OpenApiSpecName overrides the namespace base, OpenApiSpecTitle overrides the API title

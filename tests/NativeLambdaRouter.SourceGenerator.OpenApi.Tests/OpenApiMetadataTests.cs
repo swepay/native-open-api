@@ -1,3 +1,5 @@
+using Microsoft.CodeAnalysis;
+
 namespace NativeLambdaRouter.SourceGenerator.OpenApi.Tests;
 
 /// <summary>
@@ -931,6 +933,113 @@ public class MyRouter
         generatedSource.Should().NotContain("realmId");
     }
 
+    // ── [JsonPropertyName] honored by schema extraction (swepay/native-open-api#58) ─
+
+    [Fact]
+    public void Generator_AcceptsGeneric_RecordWithPropertyTargetedJsonPropertyName_UsesSnakeCaseFormField()
+    {
+        // Arrange — regression for swepay/native-open-api#58 item 5: TypePropertyExtractor
+        // used to always camelCase the C# property name (ToCamelCase(property.Name)), so an
+        // OAuth2 token body's grant_type was rendered as grantType. [property: JsonPropertyName]
+        // on a record primary-constructor parameter must win.
+        // Declared as a plain top-level class next to the route builder stub (not under its
+        // own `namespace System.Text.Json.Serialization;`): a second file-scoped namespace
+        // declaration appended after the one `CreateRouteBuilderSource()` already opened
+        // nests under it instead of opening an independent top-level namespace, which breaks
+        // a fully-qualified reference to the attribute from inside `TestApp`. The generator
+        // matches `[JsonPropertyName]` by simple type name only (see
+        // TypePropertyExtractor.ApplyJsonPropertyNameAttribute), so the real namespace is
+        // irrelevant to this test.
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+[System.AttributeUsage(System.AttributeTargets.Property | System.AttributeTargets.Field)]
+public sealed class JsonPropertyNameAttribute : System.Attribute
+{
+    public string Name { get; }
+    public JsonPropertyNameAttribute(string name) => Name = name;
+}
+
+public sealed record TokenCommand(string RealmId, string ClientId, string GrantType);
+
+public sealed record TokenBody(
+    string ClientId,
+    [property: JsonPropertyName(""grant_type"")] string GrantType);
+
+public sealed record TokenResponse(string AccessToken);
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<TokenCommand, TokenResponse>(
+            ""/v1/token"", ctx => new TokenCommand("""", """", """"))
+            .Accepts<TokenBody>()
+            .Accepts(""application/x-www-form-urlencoded"");
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("grant_type");
+        generatedSource.Should().NotContain("grantType");
+    }
+
+    [Fact]
+    public void Generator_RegisteredSchema_ClassWithJsonPropertyName_UsesDeclaredWireName()
+    {
+        // Arrange — same override, but on a plain class property (not a record parameter),
+        // registered via the typed Produces<T>(statusCode) path.
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+[System.AttributeUsage(System.AttributeTargets.Property | System.AttributeTargets.Field)]
+public sealed class JsonPropertyNameAttribute : System.Attribute
+{
+    public string Name { get; }
+    public JsonPropertyNameAttribute(string name) => Name = name;
+}
+
+public class LoginCommand { }
+public class LoginResponse { }
+
+public class OAuthErrorResponse
+{
+    public string Error { get; set; } = """";
+
+    [JsonPropertyName(""error_description"")]
+    public string ErrorDescription { get; set; } = """";
+}
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<LoginCommand, LoginResponse>(""/v1/token"", ctx => new LoginCommand())
+            .Produces<OAuthErrorResponse>(400, ""application/json"");
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("error_description:");
+        generatedSource.Should().NotContain("errorDescription");
+    }
+
     // ── Accepts (attribute-based) ───────────────────────────────────
 
     [Fact]
@@ -1004,5 +1113,237 @@ public class MyRouter
         // Assert — fluent chain should win
         generatedSource.Should().NotBeNull();
         generatedSource.Should().Contain("application/x-www-form-urlencoded");
+    }
+
+    // ── Produces<T>(statusCode[, contentType]) — swepay/native-open-api#58 ───
+
+    [Fact]
+    public void Generator_ProducesTyped_Status400_EmitsTypedResponse()
+    {
+        // Arrange — before #58, .Produces<T>(statusCode) was silently ignored for any
+        // status other than the implicit 200 (ApplyProduces only read the non-generic
+        // .Produces(string contentType) overload).
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class LoginCommand { }
+public class LoginResponse { }
+public class OAuthErrorResponse { public string Error { get; set; } = """"; public string ErrorDescription { get; set; } = """"; }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapPost<LoginCommand, LoginResponse>(""/v1/token"", ctx => new LoginCommand())
+            .Produces<OAuthErrorResponse>(400, ""application/json"");
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("\"\"400\"\":");
+        generatedSource.Should().Contain("application/json");
+        generatedSource.Should().Contain("$ref: \"\"#/components/schemas/OAuthErrorResponse\"\"");
+        // The typed schema must be registered, not just $ref'd (no dangling $ref).
+        generatedSource.Should().Contain("    OAuthErrorResponse:");
+        generatedSource.Should().Contain("error:");
+        generatedSource.Should().Contain("errorDescription:");
+    }
+
+    [Fact]
+    public void Generator_ProducesTyped_Status401_WithoutContentType_DefaultsToApplicationJson()
+    {
+        // Arrange
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetUserCommand { }
+public class GetUserResponse { }
+public class AuthErrorResponse { public string Error { get; set; } = """"; }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetUserCommand, GetUserResponse>(""/v1/users/me"", ctx => new GetUserCommand())
+            .Produces<AuthErrorResponse>(401);
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("\"\"401\"\":");
+        generatedSource.Should().Contain("$ref: \"\"#/components/schemas/AuthErrorResponse\"\"");
+    }
+
+    [Fact]
+    public void Generator_ProducesTyped_SameStatusTwoContentTypes_MergeIntoOneResponse()
+    {
+        // Arrange — 401 declared both as a typed OAuth JSON error AND as an RFC 9470
+        // problem+json challenge must be ONE "401": response object with two `content`
+        // entries, not two separate (invalid/ambiguous) "401": mapping keys.
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class UserInfoCommand { }
+public class UserInfoResponse { }
+public class OAuthErrorResponse { public string Error { get; set; } = """"; }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<UserInfoCommand, UserInfoResponse>(""/v1/userinfo"", ctx => new UserInfoCommand())
+            .Produces<OAuthErrorResponse>(401, ""application/json"")
+            .ProducesProblem(401);
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        // Exactly one "401": mapping key.
+        CountOccurrences(generatedSource!, "\"\"401\"\":").Should().Be(1);
+        generatedSource.Should().Contain("$ref: \"\"#/components/schemas/OAuthErrorResponse\"\"");
+        generatedSource.Should().Contain("$ref: \"\"#/components/schemas/SwepayProblemDetails\"\"");
+        generatedSource.Should().Contain("application/json");
+        generatedSource.Should().Contain("application/problem+json");
+    }
+
+    [Fact]
+    public void Generator_ProducesProblem_NonProblemContentType_StillEmitsContent()
+    {
+        // Arrange — regression for the bug reported in swepay/native-open-api#58 item 2:
+        // .ProducesProblem(status, contentType) with a contentType other than the literal
+        // "application/problem+json" used to leave ResponseTypeSimpleName null, which the
+        // YAML generator rendered with NO `content` at all (rejected by
+        // OpenApiLinter.ValidateContentSchemas).
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemCommand { }
+public class GetItemResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<GetItemCommand, GetItemResponse>(""/v1/items/{id}"", ctx => new GetItemCommand())
+            .ProducesProblem(400, ""application/json"");
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert — still gets a content block pointing at SwepayProblemDetails, now labeled
+        // with the caller's content type instead of silently losing its body.
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("\"\"400\"\":");
+        generatedSource.Should().Contain("$ref: \"\"#/components/schemas/SwepayProblemDetails\"\"");
+    }
+
+    // ── Produces(statusCode) — explicit no-body response (swepay/native-open-api#58) ─
+
+    [Fact]
+    public void Generator_ProducesNoBody_EmitsNoContentMarker()
+    {
+        // Arrange — /userinfo-style 401 documented only by a WWW-Authenticate header.
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class UserInfoCommand { }
+public class UserInfoResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        routes.MapGet<UserInfoCommand, UserInfoResponse>(""/v1/userinfo"", ctx => new UserInfoCommand())
+            .Produces(401);
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+        var generatedSource = GeneratorTestHelper.GetGeneratedSource(result, "GeneratedOpenApiSpec.g.cs");
+
+        // Assert
+        generatedSource.Should().NotBeNull();
+        generatedSource.Should().Contain("\"\"401\"\":");
+        generatedSource.Should().Contain("x-no-content: true");
+    }
+
+    // ── NLOAPI004 diagnostic — call recognized by name but not statically resolvable ─
+
+    [Fact]
+    public void Generator_ProducesTyped_NonLiteralStatusCode_EmitsNLOAPI004Diagnostic()
+    {
+        // Arrange — the status code is a local variable, not an integer literal, so the
+        // generator cannot read it at compile time. Previously this was a silent no-op.
+        var routeBuilderSource = GeneratorTestHelper.CreateRouteBuilderSource();
+        var sourceCode = routeBuilderSource + @"
+
+namespace TestApp;
+
+public class GetItemCommand { }
+public class GetItemResponse { }
+public class ErrorResponse { }
+
+public class MyRouter
+{
+    protected void ConfigureRoutes(IRouteBuilder routes)
+    {
+        int status = 400;
+        routes.MapGet<GetItemCommand, GetItemResponse>(""/v1/items/{id}"", ctx => new GetItemCommand())
+            .Produces<ErrorResponse>(status);
+    }
+}
+";
+
+        // Act
+        var result = GeneratorTestHelper.RunGenerator(sourceCode);
+
+        // Assert
+        result.Diagnostics.Should().Contain(d => d.Id == "NLOAPI004" && d.Severity == DiagnosticSeverity.Warning);
+    }
+
+    private static int CountOccurrences(string haystack, string needle)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = haystack.IndexOf(needle, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += needle.Length;
+        }
+        return count;
     }
 }
